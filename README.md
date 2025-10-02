@@ -1,6 +1,8 @@
 # wallrs
 Simple TUI Wallpaper Manger for X11/Wayland.
 
+![wallrs Demo](assets/demo.mp4)
+
 ## Table of contents
 * [Requirements](#requirements)
 * [Installation](#installation)
