@@ -1,12 +1,17 @@
 use crate::config::Config;
-use std::{fs, path::Path, process::Command};
+use std::{
+    fs,
+    path::Path,
+    process::{Command, Stdio},
+};
 
 pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     // Always run wal to generate colors
     Command::new("wal")
         .args(&["-i", path.to_str().unwrap(), "-n", "--backend", "wal"])
+        .stdout(Stdio::null()) // discard stdout
+        .stderr(Stdio::null()) // discard stderr
         .status()?;
-
     // Apply wallpaper depending on session
     match config.session {
         crate::config::Session::Wayland => {
