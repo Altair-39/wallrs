@@ -5,18 +5,19 @@ use crate::persistence::load_list;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
+use image::io::Reader as ImageReader;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    widgets::{Block, Borders, List, ListItem, Tabs},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs},
     Terminal,
 };
-use std::io::{self, Write};
+use ratatui_image::{picker::Picker, protocol::StatefulProtocol, Resize, StatefulImage};
+use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
 use strum_macros::Display;
-use viuer::Config as ViuerConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
 pub enum Tab {
@@ -34,8 +35,7 @@ impl Tab {
     }
 
     pub fn from_name(s: &str) -> Option<Self> {
-        let s = s.trim().to_lowercase();
-        match s.as_str() {
+        match s.trim().to_lowercase().as_str() {
             "wallpapers" | "wallpaper" | "wall" => Some(Tab::Wallpapers),
             "history" | "recent" | "recents" => Some(Tab::History),
             "favorites" | "favourites" | "favorite" | "favourite" | "favs" => Some(Tab::Favorites),
@@ -51,6 +51,10 @@ impl FromStr for Tab {
     }
 }
 
+// ---------------------------
+// TUI Entry Point
+// ---------------------------
+
 pub fn run_tui(
     wallpapers: &[PathBuf],
     config: &AppConfig,
@@ -60,25 +64,31 @@ pub fn run_tui(
 }
 
 // ---------------------------
-// Core TUI Application Struct
+// TUI Application
 // ---------------------------
 
-struct TuiApp<'a> {
+pub struct TuiApp<'a> {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     config: &'a AppConfig,
     wallpapers: Vec<PathBuf>,
     history: Vec<PathBuf>,
     favorites: Vec<PathBuf>,
     selected: usize,
-    list_state: ratatui::widgets::ListState,
+    list_state: ListState,
     search_query: String,
     in_search: bool,
     current_tab: Tab,
     last_preview: Option<PathBuf>,
+    multi_select: bool,
+    selected_items: Vec<usize>,
+
+    // Image rendering
+    picker: Picker,
+    preview_state: Option<StatefulProtocol>,
 }
 
 impl<'a> TuiApp<'a> {
-    fn new(
+    pub fn new(
         wallpapers: &[PathBuf],
         config: &'a AppConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -92,13 +102,14 @@ impl<'a> TuiApp<'a> {
         let mut terminal = Terminal::new(backend)?;
         terminal.clear()?;
 
-        // pick first enabled tab from config, fallback to Wallpapers
         let first_tab = config
             .tabs
             .iter()
             .find(|t| t.enabled)
             .map(|t| t.tab)
             .unwrap_or(Tab::Wallpapers);
+
+        let picker = Picker::from_query_stdio()?;
 
         Ok(Self {
             terminal,
@@ -108,7 +119,7 @@ impl<'a> TuiApp<'a> {
             favorites: load_list("favorites.txt"),
             selected: 0,
             list_state: {
-                let mut s = ratatui::widgets::ListState::default();
+                let mut s = ListState::default();
                 s.select(Some(0));
                 s
             },
@@ -116,48 +127,46 @@ impl<'a> TuiApp<'a> {
             in_search: false,
             current_tab: first_tab,
             last_preview: None,
+            multi_select: false,
+            selected_items: Vec::new(),
+            picker,
+            preview_state: None,
         })
     }
 
-    fn run(&mut self) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    pub fn run(&mut self) -> Result<PathBuf, Box<dyn std::error::Error>> {
         loop {
             let filtered = self.filter_items();
             self.adjust_selection(&filtered);
             self.draw_ui(&filtered)?;
 
             if event::poll(std::time::Duration::from_millis(100))? {
-                if let Some(result) = self.handle_event(&filtered)? {
+                if let Some(selected) = self.handle_event(&filtered)? {
                     self.cleanup()?;
-                    return Ok(result);
+                    return Ok(selected);
                 }
             }
         }
     }
 
     // --------------------
-    // Tab management helpers
+    // Tab management
     // --------------------
-
-    fn default_tab_order() -> Vec<Tab> {
-        vec![Tab::Wallpapers, Tab::History, Tab::Favorites]
-    }
 
     fn active_tabs(&self) -> Vec<Tab> {
         if !self.config.tabs.is_empty() {
-            let mut out: Vec<Tab> = self
+            let out: Vec<Tab> = self
                 .config
                 .tabs
                 .iter()
                 .filter(|t| t.enabled)
                 .map(|t| t.tab)
                 .collect();
-            if out.is_empty() {
-                return Self::default_tab_order();
+            if !out.is_empty() {
+                return out;
             }
-            out
-        } else {
-            Self::default_tab_order()
         }
+        vec![Tab::Wallpapers, Tab::History, Tab::Favorites]
     }
 
     fn current_tab_index(&self) -> usize {
@@ -167,26 +176,8 @@ impl<'a> TuiApp<'a> {
             .unwrap_or(0)
     }
 
-    fn next_tab(&mut self) {
-        let active = self.active_tabs();
-        if let Some(pos) = active.iter().position(|&t| t == self.current_tab) {
-            self.current_tab = active.get(pos + 1).copied().unwrap_or(active[0]);
-        }
-    }
-
-    fn previous_tab(&mut self) {
-        let active = self.active_tabs();
-        if let Some(pos) = active.iter().position(|&t| t == self.current_tab) {
-            if pos == 0 {
-                self.current_tab = *active.last().unwrap();
-            } else {
-                self.current_tab = active[pos - 1];
-            }
-        }
-    }
-
     // --------------------
-    // UI + State Management
+    // Filtering & selection
     // --------------------
 
     fn filter_items(&self) -> Vec<PathBuf> {
@@ -224,28 +215,19 @@ impl<'a> TuiApp<'a> {
         }
     }
 
+    // --------------------
+    // UI Rendering
+    // --------------------
+
     fn draw_ui(&mut self, filtered: &[PathBuf]) -> Result<(), Box<dyn std::error::Error>> {
         let size = self.terminal.size()?;
-        let area = Rect {
+        let area_rect = Rect {
             x: 0,
             y: 0,
             width: size.width,
             height: size.height,
         };
-        let vertical_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(0)])
-            .split(area);
 
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-            .split(vertical_chunks[1]);
-
-        let list_area = chunks[0];
-        let preview_area = chunks[1];
-
-        // Precompute everything that borrows `self` so the closure only uses locals
         let active_tabs = self.active_tabs();
         let tab_titles: Vec<String> = active_tabs.iter().map(|t| t.title()).collect();
         let selected_index = self.current_tab_index();
@@ -262,71 +244,105 @@ impl<'a> TuiApp<'a> {
             Tab::Favorites => "Favorites".into(),
         };
 
-        // clone favorites list locally so closure doesn't borrow self
-        let favorites_clone = self.favorites.clone();
-        // move a mutable reference to list_state into a local
-        let list_state_ref = &mut self.list_state;
-
         let items: Vec<ListItem> = filtered
             .iter()
-            .map(|p| {
+            .enumerate()
+            .map(|(i, p)| {
                 let mut name = p.file_name().unwrap().to_string_lossy().to_string();
-                if favorites_clone.contains(p) {
+                if self.favorites.contains(p) {
                     name.push_str(" ★");
+                }
+                if self.multi_select && self.selected_items.contains(&i) {
+                    name = format!("[x] {}", name);
                 }
                 ListItem::new(name)
             })
             .collect();
 
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .split(area_rect);
+
+        let list_area = Rect {
+            x: 0,
+            y: chunks[1].y,
+            width: chunks[1].width / 2,
+            height: chunks[1].height,
+        };
+        let preview_area = Rect {
+            x: chunks[1].width / 2,
+            y: chunks[1].y,
+            width: chunks[1].width / 2,
+            height: chunks[1].height,
+        };
+
+        // Update preview state if selection changed
+        if !filtered.is_empty() && Some(&filtered[self.selected]) != self.last_preview.as_ref() {
+            let img = ImageReader::open(&filtered[self.selected])?
+                .with_guessed_format()?
+                .decode()?;
+            self.preview_state = Some(self.picker.new_resize_protocol(img));
+            self.last_preview = Some(filtered[self.selected].clone());
+        }
+
+        // Compute scrollbar
+        let total = filtered.len() as u16;
+        let height = list_area.height;
+        let scroll_ratio = (self.selected as f32 / total.max(1) as f32).min(1.0);
+        let scroll_pos = (scroll_ratio * (height - 1) as f32).round() as u16;
+
+        // Draw UI
         self.terminal.draw(|f| {
+            // Tabs
             let tabs = Tabs::new(tab_titles.clone())
                 .select(selected_index)
                 .block(Block::default().borders(Borders::ALL))
                 .highlight_style(Style::default().fg(Color::Yellow));
-            f.render_widget(tabs, vertical_chunks[0]);
+            f.render_widget(tabs, chunks[0]);
 
-            let list = List::new(items.clone())
-                .block(Block::default().title(title.clone()).borders(Borders::ALL))
+            // Scrollbar
+            let scrollbar_x = list_area.x; // left edge
+            for y in 0..height {
+                let symbol = if y == scroll_pos { "█" } else { "│" };
+                let p = Paragraph::new(symbol)
+                    .style(Style::default().fg(Color::Yellow))
+                    .block(Block::default());
+                f.render_widget(p, Rect::new(scrollbar_x, list_area.y + y, 1, 1));
+            }
+
+            let list = List::new(items)
+                .block(
+                    Block::default()
+                        .title(title)
+                        .borders(Borders::ALL)
+                        .style(Style::default()),
+                )
                 .highlight_style(Style::default().fg(Color::Yellow))
                 .highlight_symbol(">> ");
-            f.render_stateful_widget(list, list_area, list_state_ref);
+            f.render_stateful_widget(
+                list,
+                Rect {
+                    x: list_area.x + 1,
+                    y: list_area.y,
+                    width: list_area.width - 1,
+                    height: list_area.height,
+                },
+                &mut self.list_state,
+            );
+
+            // Preview
+            if let Some(state) = &mut self.preview_state {
+                let widget = StatefulImage::new();
+                f.render_stateful_widget(widget.resize(Resize::Fit(None)), preview_area, state);
+            }
         })?;
 
-        self.update_preview(filtered, preview_area)?;
         Ok(())
     }
-
-    fn update_preview(
-        &mut self,
-        filtered: &[PathBuf],
-        area: Rect,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if filtered.is_empty() {
-            return Ok(());
-        }
-        let path = &filtered[self.selected];
-        if Some(path.clone()) == self.last_preview {
-            return Ok(());
-        }
-
-        let mut stdout = io::stdout();
-        for y in area.y..area.y + area.height {
-            crossterm::queue!(stdout, crossterm::cursor::MoveTo(area.x, y))?;
-            write!(stdout, "{}", " ".repeat(area.width as usize))?;
-        }
-        stdout.flush()?;
-
-        let conf = ViuerConfig {
-            x: area.x,
-            y: area.y as i16,
-            width: Some(area.width as u32 / 2),
-            height: Some(area.height as u32),
-            ..Default::default()
-        };
-        let _ = viuer::print_from_file(path, &conf);
-        self.last_preview = Some(path.clone());
-        Ok(())
-    }
+    // --------------------
+    // Event Handling
+    // --------------------
 
     fn handle_event(
         &mut self,
@@ -342,7 +358,7 @@ impl<'a> TuiApp<'a> {
                     search_query: &mut self.search_query,
                     selected: &mut self.selected,
                     list_state: &mut self.list_state,
-                    filtered: &filtered,
+                    filtered,
                     history: &mut self.history,
                     favorites: &mut self.favorites,
                     vim_motion: self.config.vim_motion,
@@ -350,8 +366,11 @@ impl<'a> TuiApp<'a> {
                     keybindings: &self.config.keybindings,
                     active_tabs: &active_tabs,
                 };
-
-                Ok(handle_input(&mut input))
+                if let Some(sel) =
+                    handle_input(&mut input, &mut self.multi_select, &mut self.selected_items)
+                {
+                    return Ok(Some(sel));
+                }
             }
             event::Event::Mouse(me) if self.config.enable_mouse_support => {
                 let mut mouse_input = MouseInput {
@@ -364,11 +383,15 @@ impl<'a> TuiApp<'a> {
                     current_tab: &mut self.current_tab,
                 };
                 handle_mouse(&mut mouse_input);
-                Ok(None)
             }
-            _ => Ok(None),
+            _ => {}
         }
+        Ok(None)
     }
+
+    // --------------------
+    // Cleanup
+    // --------------------
 
     fn cleanup(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.config.enable_mouse_support {

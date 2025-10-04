@@ -24,7 +24,11 @@ pub struct Input<'a> {
     pub active_tabs: &'a [Tab],
 }
 
-pub fn handle_input(input: &mut Input) -> Option<PathBuf> {
+pub fn handle_input(
+    input: &mut Input,
+    multi_select: &mut bool,
+    selected_items: &mut Vec<usize>,
+) -> Option<PathBuf> {
     let Input {
         key,
         current_tab,
@@ -41,12 +45,32 @@ pub fn handle_input(input: &mut Input) -> Option<PathBuf> {
         active_tabs,
     } = input;
 
-    // Dereference mutable references for convenience
     let current_tab = &mut **current_tab;
     let in_search = &mut **in_search;
     let selected = &mut **selected;
 
     match key {
+        // Toggle multi-select mode, only outside search
+        KeyCode::Char(c) if *c == keybindings.multi_select && !*in_search => {
+            *multi_select = !*multi_select;
+            if !*multi_select {
+                selected_items.clear();
+            } else if !selected_items.contains(selected) {
+                selected_items.push(*selected);
+            }
+        }
+
+        // Tab switching
+        KeyCode::Tab if !*in_search => {
+            if let Some(pos) = active_tabs.iter().position(|&t| t == *current_tab) {
+                *current_tab = active_tabs[(pos + 1) % active_tabs.len()];
+                *selected = 0;
+                list_state.select(Some(*selected));
+                selected_items.clear();
+                *multi_select = false;
+            }
+        }
+
         // Start search
         KeyCode::Char(c)
             if *c == keybindings.search && *current_tab == Tab::Wallpapers && !*in_search =>
@@ -61,7 +85,7 @@ pub fn handle_input(input: &mut Input) -> Option<PathBuf> {
         KeyCode::Esc if *in_search => *in_search = false,
         KeyCode::Enter if *in_search => *in_search = false,
 
-        // Input search query
+        // Search input
         KeyCode::Char(c) if *in_search => {
             search_query.push(*c);
             *selected = 0;
@@ -73,66 +97,49 @@ pub fn handle_input(input: &mut Input) -> Option<PathBuf> {
             list_state.select(Some(*selected));
         }
 
-        // Navigation (vim motion)
+        // Navigation
         KeyCode::Down | KeyCode::Char('j') if *vim_motion => {
             if *selected < filtered.len().saturating_sub(1) {
                 *selected += 1;
                 list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
             }
         }
         KeyCode::Up | KeyCode::Char('k') if *vim_motion => {
             if *selected > 0 {
                 *selected -= 1;
                 list_state.select(Some(*selected));
-            }
-        }
-        KeyCode::PageDown => {
-            if *selected < filtered.len().saturating_sub(5) {
-                *selected += 5;
-                list_state.select(Some(*selected));
-            }
-        }
-        KeyCode::PageUp => {
-            if *selected > 5 {
-                *selected -= 5;
-                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
             }
         }
 
-        // Tab switching (respect active_tabs)
-        KeyCode::Tab | KeyCode::Char('l') if *vim_motion => {
-            if let Some(pos) = active_tabs.iter().position(|t| *t == *current_tab) {
-                let next = (pos + 1) % active_tabs.len();
-                *current_tab = active_tabs[next];
-                *selected = 0;
-                list_state.select(Some(*selected));
-            }
-        }
-        KeyCode::Char('h') if *vim_motion => {
-            if let Some(pos) = active_tabs.iter().position(|t| *t == *current_tab) {
-                let prev = if pos == 0 {
-                    active_tabs.len() - 1
-                } else {
-                    pos - 1
-                };
-                *current_tab = active_tabs[prev];
-                *selected = 0;
-                list_state.select(Some(*selected));
-            }
-        }
-
-        // Toggle favorite (custom keybinding)
+        // Toggle favorite
         KeyCode::Char(c) if *c == keybindings.favorite && !filtered.is_empty() => {
-            let sel = filtered[*selected].clone();
-            if favorites.contains(&sel) {
-                favorites.retain(|p| p != &sel);
+            if *multi_select && !selected_items.is_empty() {
+                for &i in selected_items.iter() {
+                    let item = filtered[i].clone();
+                    if favorites.contains(&item) {
+                        favorites.retain(|p| p != &item);
+                    } else {
+                        favorites.insert(0, item);
+                    }
+                }
             } else {
-                favorites.insert(0, sel.clone());
+                let item = filtered[*selected].clone();
+                if favorites.contains(&item) {
+                    favorites.retain(|p| p != &item);
+                } else {
+                    favorites.insert(0, item);
+                }
             }
             save_list("favorites.txt", favorites);
         }
 
-        // Select item
+        // Select / confirm (always a single PathBuf for applying wallpaper)
         KeyCode::Enter if !*in_search && !filtered.is_empty() => {
             let sel = filtered[*selected].clone();
             if *current_tab == Tab::Wallpapers {

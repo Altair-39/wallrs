@@ -9,6 +9,7 @@ use crate::tui::Tab;
 pub struct CustomKeybindings {
     pub search: char,
     pub favorite: char,
+    pub multi_select: char,
 }
 
 pub struct Config {
@@ -94,10 +95,8 @@ impl Config {
                 enable_mouse_support = v;
             }
 
-            // Parse tabs if present (support multiple shapes)
             if let Some(tab_val) = value.get("tabs") {
                 if let Some(arr) = tab_val.as_array() {
-                    // array of inline tables or strings
                     let mut parsed: Vec<TabConfig> = Vec::new();
                     for item in arr {
                         match item {
@@ -124,7 +123,6 @@ impl Config {
                         tabs = parsed;
                     }
                 } else if let Some(tbl) = tab_val.as_table() {
-                    // support [tabs] wallpapers = true style -> preserve default order
                     let mut by_name = std::collections::HashMap::new();
                     for (k, v) in tbl {
                         if let Some(enabled) = v.as_bool() {
@@ -133,7 +131,6 @@ impl Config {
                             }
                         }
                     }
-                    // merge with default order
                     let mut merged: Vec<TabConfig> = Vec::new();
                     for def in TabConfig::default_tabs() {
                         let enabled = by_name.get(&def.tab).copied().unwrap_or(def.enabled);
@@ -143,7 +140,6 @@ impl Config {
                         });
                     }
                     tabs = merged;
-                } else {
                 }
             }
         }
@@ -161,6 +157,12 @@ impl Config {
             }
 
             if let Some(c) = value.get("favorite").and_then(|v| v.as_str()) {
+                if let Some(ch) = c.chars().next() {
+                    keybindings.favorite = ch;
+                }
+            }
+
+            if let Some(c) = value.get("multi_select").and_then(|v| v.as_str()) {
                 if let Some(ch) = c.chars().next() {
                     keybindings.favorite = ch;
                 }
@@ -183,6 +185,7 @@ impl Default for CustomKeybindings {
         Self {
             search: '/',
             favorite: 'f',
+            multi_select: 'v',
         }
     }
 }
