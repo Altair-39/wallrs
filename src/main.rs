@@ -1,5 +1,8 @@
 mod apply;
 mod config;
+mod input;
+mod mouse;
+mod persistence;
 mod tui;
 mod wallpapers;
 
@@ -19,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let selected_wallpaper = run_tui(&wallpapers, cfg.vim_motion, cfg.enable_mouse_support)?;
+    let selected_wallpaper = run_tui(&wallpapers, &cfg)?;
     apply_wallpaper(&selected_wallpaper, &cfg)?;
 
     Ok(())
