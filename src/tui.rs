@@ -351,6 +351,7 @@ impl<'a> TuiApp<'a> {
         match event::read()? {
             event::Event::Key(key) => {
                 let active_tabs = self.active_tabs();
+                let mut filtered_vec = filtered.to_vec();
                 let mut input = Input {
                     key: key.code,
                     current_tab: &mut self.current_tab,
@@ -358,7 +359,7 @@ impl<'a> TuiApp<'a> {
                     search_query: &mut self.search_query,
                     selected: &mut self.selected,
                     list_state: &mut self.list_state,
-                    filtered,
+                    filtered: &mut filtered_vec,
                     history: &mut self.history,
                     favorites: &mut self.favorites,
                     vim_motion: self.config.vim_motion,
