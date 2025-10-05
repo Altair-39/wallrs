@@ -20,7 +20,7 @@ pub struct Config {
     pub enable_mouse_support: bool,
     pub keybindings: CustomKeybindings,
     pub tabs: Vec<TabConfig>,
-    pub list_position: String, // "left" or "right"
+    pub list_position: String,
 }
 
 #[derive(Debug, Clone, Copy)]

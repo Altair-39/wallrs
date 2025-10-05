@@ -71,6 +71,31 @@ pub fn handle_input(
             }
         }
 
+        // Vim-style tab switching
+        KeyCode::Char('l') if *vim_motion && !*in_search => {
+            if let Some(pos) = active_tabs.iter().position(|&t| t == *current_tab) {
+                *current_tab = active_tabs[(pos + 1) % active_tabs.len()];
+                *selected = 0;
+                list_state.select(Some(*selected));
+                selected_items.clear();
+                *multi_select = false;
+            }
+        }
+
+        KeyCode::Char('h') if *vim_motion && !*in_search => {
+            if let Some(pos) = active_tabs.iter().position(|&t| t == *current_tab) {
+                let new_pos = if pos == 0 {
+                    active_tabs.len() - 1
+                } else {
+                    pos - 1
+                };
+                *current_tab = active_tabs[new_pos];
+                *selected = 0;
+                list_state.select(Some(*selected));
+                selected_items.clear();
+                *multi_select = false;
+            }
+        }
         // Start search
         KeyCode::Char(c)
             if *c == keybindings.search && *current_tab == Tab::Wallpapers && !*in_search =>
@@ -98,7 +123,7 @@ pub fn handle_input(
         }
 
         // Navigation
-        KeyCode::Down | KeyCode::Char('j') if *vim_motion => {
+        KeyCode::Down => {
             if *selected < filtered.len().saturating_sub(1) {
                 *selected += 1;
                 list_state.select(Some(*selected));
@@ -107,7 +132,25 @@ pub fn handle_input(
                 }
             }
         }
-        KeyCode::Up | KeyCode::Char('k') if *vim_motion => {
+        KeyCode::Char('j') if *vim_motion => {
+            if *selected < filtered.len().saturating_sub(1) {
+                *selected += 1;
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
+            }
+        }
+        KeyCode::Up => {
+            if *selected > 0 {
+                *selected -= 1;
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
+            }
+        }
+        KeyCode::Char('k') if *vim_motion => {
             if *selected > 0 {
                 *selected -= 1;
                 list_state.select(Some(*selected));
