@@ -1,19 +1,21 @@
 use crate::config::Config as AppConfig;
-use crate::input::{handle_input, Input};
-use crate::mouse::{handle_mouse, MouseInput};
+use crate::input::{Input, handle_input};
+use crate::mouse::{MouseInput, handle_mouse};
 use crate::persistence::load_list;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 use image::ImageReader;
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs},
-    Terminal,
 };
-use ratatui_image::{picker::Picker, protocol::StatefulProtocol, Resize, StatefulImage};
+use ratatui_image::{Resize, StatefulImage, picker::Picker, protocol::StatefulProtocol};
 use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -97,6 +99,7 @@ impl<'a> TuiApp<'a> {
         }
         enable_raw_mode()?;
 
+        execute!(io::stdout(), EnterAlternateScreen)?;
         let stdout = io::stdout();
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
