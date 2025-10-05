@@ -21,6 +21,7 @@ pub struct Config {
     pub keybindings: CustomKeybindings,
     pub tabs: Vec<TabConfig>,
     pub list_position: String,
+    pub transition_type: String, // ✅ NEW: wallpaper transition for swww
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -78,7 +79,8 @@ impl Config {
         let mut enable_mouse_support = false;
         let mut keybindings = CustomKeybindings::default();
         let mut tabs = TabConfig::default_tabs();
-        let mut list_position = String::from("left"); // Default: list on the left
+        let mut list_position = String::from("left");
+        let mut transition_type = String::from("fade");
 
         // Load main config.toml
         if config_file.exists() {
@@ -99,8 +101,16 @@ impl Config {
 
             if let Some(v) = value.get("list_position").and_then(|v| v.as_str()) {
                 let lower = v.to_lowercase();
-                if lower == "left" || lower == "right" || lower == "top" || lower == "bottom" {
+                if ["left", "right", "top", "bottom"].contains(&lower.as_str()) {
                     list_position = lower;
+                }
+            }
+
+            if let Some(v) = value.get("transition_type").and_then(|v| v.as_str()) {
+                let valid_transitions = ["fade", "wipe", "grow", "outer", "any", "none", "random"];
+                let lower = v.to_lowercase();
+                if valid_transitions.contains(&lower.as_str()) {
+                    transition_type = lower;
                 }
             }
 
@@ -187,6 +197,7 @@ impl Config {
             keybindings,
             tabs,
             list_position,
+            transition_type,
         }
     }
 }

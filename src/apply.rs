@@ -12,9 +12,17 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
         .stdout(Stdio::null()) // discard stdout
         .stderr(Stdio::null()) // discard stderr
         .status()?;
+
     // Apply wallpaper depending on session
     match config.session {
         crate::config::Session::Wayland => {
+            // ✅ Use user-configured swww transition type
+            let transition = if !config.transition_type.is_empty() {
+                config.transition_type.as_str()
+            } else {
+                "fade"
+            };
+
             Command::new("swww")
                 .args(&[
                     "img",
@@ -22,10 +30,11 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
                     "--transition-fps",
                     "60",
                     "--transition-type",
-                    "fade",
+                    transition,
                 ])
                 .status()?;
         }
+
         crate::config::Session::X11 => {
             Command::new("feh")
                 .args(&["--bg-scale", path.to_str().unwrap()])
@@ -33,9 +42,13 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
         }
     }
 
-    Command::new("pkill").args(&["-USR2", "waybar"]).status()?;
+    // Reload waybar (if running)
+    Command::new("pkill")
+        .args(&["-USR2", "waybar"])
+        .status()
+        .ok();
 
-    // Copy current wallpaper to rofi folder
+    // Copy current wallpaper to rofi preview folder
     fs::copy(
         path,
         dirs::home_dir()

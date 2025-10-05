@@ -12,6 +12,8 @@ enable_mouse_support = true
 # List Position
 list_position = "bottom"
 
+transition_type = "random"
+
 # Tabs configuration
 
 [[tabs]]
