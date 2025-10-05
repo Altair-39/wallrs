@@ -5,7 +5,7 @@ use crate::persistence::load_list;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
-use image::io::Reader as ImageReader;
+use image::ImageReader;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -228,6 +228,7 @@ impl<'a> TuiApp<'a> {
             height: size.height,
         };
 
+        // Tabs
         let active_tabs = self.active_tabs();
         let tab_titles: Vec<String> = active_tabs.iter().map(|t| t.title()).collect();
         let selected_index = self.current_tab_index();
@@ -244,6 +245,7 @@ impl<'a> TuiApp<'a> {
             Tab::Favorites => "Favorites".into(),
         };
 
+        // List items
         let items: Vec<ListItem> = filtered
             .iter()
             .enumerate()
@@ -259,25 +261,46 @@ impl<'a> TuiApp<'a> {
             })
             .collect();
 
+        // Split screen vertically for tabs + main area
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(area_rect);
 
-        let list_area = Rect {
-            x: 0,
-            y: chunks[1].y,
-            width: chunks[1].width / 2,
-            height: chunks[1].height,
-        };
-        let preview_area = Rect {
-            x: chunks[1].width / 2,
-            y: chunks[1].y,
-            width: chunks[1].width / 2,
-            height: chunks[1].height,
+        // Determine list and preview layout based on config
+        let (list_area, preview_area) = match self.config.list_position.to_lowercase().as_str() {
+            "right" => {
+                let halves = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(chunks[1]);
+                (halves[1], halves[0])
+            }
+            "top" => {
+                let halves = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(chunks[1]);
+                (halves[0], halves[1])
+            }
+            "bottom" => {
+                let halves = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(chunks[1]);
+                (halves[1], halves[0])
+            }
+            _ => {
+                // default "left"
+                let halves = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(chunks[1]);
+                (halves[0], halves[1])
+            }
         };
 
-        // Update preview state if selection changed
+        // Update preview if selection changed
         if !filtered.is_empty() && Some(&filtered[self.selected]) != self.last_preview.as_ref() {
             let img = ImageReader::open(&filtered[self.selected])?
                 .with_guessed_format()?
@@ -286,7 +309,7 @@ impl<'a> TuiApp<'a> {
             self.last_preview = Some(filtered[self.selected].clone());
         }
 
-        // Compute scrollbar
+        // Compute scrollbar for list
         let total = filtered.len() as u16;
         let height = list_area.height;
         let scroll_ratio = (self.selected as f32 / total.max(1) as f32).min(1.0);
@@ -302,15 +325,15 @@ impl<'a> TuiApp<'a> {
             f.render_widget(tabs, chunks[0]);
 
             // Scrollbar
-            let scrollbar_x = list_area.x; // left edge
             for y in 0..height {
                 let symbol = if y == scroll_pos { "█" } else { "│" };
                 let p = Paragraph::new(symbol)
                     .style(Style::default().fg(Color::Yellow))
                     .block(Block::default());
-                f.render_widget(p, Rect::new(scrollbar_x, list_area.y + y, 1, 1));
+                f.render_widget(p, Rect::new(list_area.x, list_area.y + y, 1, 1));
             }
 
+            // List
             let list = List::new(items)
                 .block(
                     Block::default()

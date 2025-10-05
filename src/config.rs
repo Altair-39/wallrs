@@ -1,17 +1,18 @@
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-
 use toml::Value;
 
 use crate::tui::Tab;
 
+#[derive(Clone)]
 pub struct CustomKeybindings {
     pub search: char,
     pub favorite: char,
     pub multi_select: char,
 }
 
+#[derive(Clone)]
 pub struct Config {
     pub wallpaper_dir: PathBuf,
     pub session: Session,
@@ -19,6 +20,7 @@ pub struct Config {
     pub enable_mouse_support: bool,
     pub keybindings: CustomKeybindings,
     pub tabs: Vec<TabConfig>,
+    pub list_position: String, // "left" or "right"
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -61,7 +63,7 @@ impl Config {
             Session::X11
         };
 
-        // XDG config path
+        // Resolve config paths
         let xdg_config = env::var("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|_| dirs::home_dir().unwrap().join(".config"));
@@ -69,16 +71,16 @@ impl Config {
         let config_file = xdg_config.join("wallrs/config.toml");
         let keybindings_file = xdg_config.join("wallrs/keybindings.toml");
 
-        // Default wallpaper directory
+        // Default values
         let default_dir = dirs::home_dir().unwrap().join("Pictures/Wallpapers");
-
-        // Defaults
-        let mut wallpaper_dir = default_dir.clone();
+        let mut wallpaper_dir = default_dir;
         let mut vim_motion = false;
         let mut enable_mouse_support = false;
         let mut keybindings = CustomKeybindings::default();
         let mut tabs = TabConfig::default_tabs();
+        let mut list_position = String::from("left"); // Default: list on the left
 
+        // Load main config.toml
         if config_file.exists() {
             let contents = fs::read_to_string(&config_file).expect("Failed to read config file");
             let value: Value = toml::from_str(&contents).expect("Invalid TOML in config file");
@@ -95,6 +97,14 @@ impl Config {
                 enable_mouse_support = v;
             }
 
+            if let Some(v) = value.get("list_position").and_then(|v| v.as_str()) {
+                let lower = v.to_lowercase();
+                if lower == "left" || lower == "right" || lower == "top" || lower == "bottom" {
+                    list_position = lower;
+                }
+            }
+
+            // Load tab configuration
             if let Some(tab_val) = value.get("tabs") {
                 if let Some(arr) = tab_val.as_array() {
                     let mut parsed: Vec<TabConfig> = Vec::new();
@@ -144,7 +154,7 @@ impl Config {
             }
         }
 
-        // Read keybindings.toml if exists
+        // Load keybindings.toml if present
         if keybindings_file.exists() {
             let contents =
                 fs::read_to_string(&keybindings_file).expect("Failed to read keybindings.toml");
@@ -164,18 +174,19 @@ impl Config {
 
             if let Some(c) = value.get("multi_select").and_then(|v| v.as_str()) {
                 if let Some(ch) = c.chars().next() {
-                    keybindings.favorite = ch;
+                    keybindings.multi_select = ch;
                 }
             }
         }
 
-        Config {
+        Self {
             wallpaper_dir,
             session,
             vim_motion,
             enable_mouse_support,
             keybindings,
             tabs,
+            list_position,
         }
     }
 }

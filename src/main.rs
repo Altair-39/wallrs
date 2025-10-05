@@ -77,6 +77,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let cache_file = cache_dir.join(format!("current.{}", ext));
 
         fs::copy(&selected_wallpaper, &cache_file)?;
+        Command::new("pkill").args(&["-USR2", "waybar"]).status()?;
+
         println!("Saved selection to {}", cache_file.display());
     } else {
         // Apply wallpaper normally
