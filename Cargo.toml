@@ -2,6 +2,8 @@
 name = "wallrs"
 version = "0.1.0"
 edition = "2024"
+description = "TUI Wallpapers Manager"
+license = "GNU"
 
 [dependencies]
 crossterm = "0.29.0"
