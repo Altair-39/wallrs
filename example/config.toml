@@ -1,0 +1,27 @@
+# config.toml
+
+# Wallpaper directory (optional)
+wallpaper_dir = "/home/altair/Pictures/Wallpapers"
+
+# Enable vim-style motion (optional)
+vim_motion = true
+
+# Enable mouse input (optional)
+enable_mouse_support = true
+
+# List Position
+list_position = "bottom"
+
+# Tabs configuration
+
+[[tabs]]
+name = "Wallpapers"
+enabled = true
+
+[[tabs]]
+name = "Favorites"
+enabled = true
+
+[[tabs]]
+name = "History"
+enabled = true

@@ -1,0 +1,10 @@
+# keybindings.toml
+
+# Key to start search (default: '/')
+search = "/"
+
+# Key to toggle favorite (default: 'f')
+favorite = "f"
+
+# Key to multi select (default: 'v')
+multi_select = "v"
