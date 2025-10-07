@@ -34,17 +34,9 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
         }
 
         crate::config::Session::X11 => {
-            if Command::new("which").arg("nitrogen").status()?.success() {
-                Command::new("nitrogen")
-                    .args(&["--set-zoom-fill", path.to_str().unwrap(), "--save"])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()?;
-            } else {
-                Command::new("feh")
-                    .args(&["--bg-scale", path.to_str().unwrap()])
-                    .status()?;
-            }
+            Command::new("feh")
+                .args(&["--bg-scale", path.to_str().unwrap()])
+                .status()?;
         }
     }
 
