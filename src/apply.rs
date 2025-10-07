@@ -13,10 +13,8 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
         .stderr(Stdio::null()) // discard stderr
         .status()?;
 
-    // Apply wallpaper depending on session
     match config.session {
         crate::config::Session::Wayland => {
-            // ✅ Use user-configured swww transition type
             let transition = if !config.transition_type.is_empty() {
                 config.transition_type.as_str()
             } else {
@@ -36,9 +34,17 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
         }
 
         crate::config::Session::X11 => {
-            Command::new("feh")
-                .args(&["--bg-scale", path.to_str().unwrap()])
-                .status()?;
+            if Command::new("which").arg("nitrogen").status()?.success() {
+                Command::new("nitrogen")
+                    .args(&["--set-zoom-fill", path.to_str().unwrap(), "--save"])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()?;
+            } else {
+                Command::new("feh")
+                    .args(&["--bg-scale", path.to_str().unwrap()])
+                    .status()?;
+            }
         }
     }
 
