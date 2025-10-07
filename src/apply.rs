@@ -22,14 +22,14 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
             })
             .collect()
     };
-
-    // Run wal
-    Command::new("wal")
-        .args(expand_args(&config.commands.wal))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()?;
-
+    if config.pywal {
+        // Run wal
+        Command::new("wal")
+            .args(expand_args(&config.commands.wal))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+    }
     match config.session {
         crate::config::Session::Wayland => {
             Command::new("swww")
@@ -48,14 +48,6 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
         .args(&["-USR2", "waybar"])
         .status()
         .ok();
-
-    // Copy current wallpaper
-    fs::copy(
-        path,
-        dirs::home_dir()
-            .unwrap()
-            .join(".config/rofi/images/current.jpg"),
-    )?;
 
     Ok(())
 }

@@ -8,6 +8,7 @@ mod wallpapers;
 
 use apply::apply_wallpaper;
 use config::Config;
+use crossterm::event::EnableFocusChange;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -29,6 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load config
     let mut cfg = Config::load();
 
+    cfg.pywal = args.iter().any(|a| a == "--pywal");
     // If --path is set, override wallpaper_dir
     if let Some(path) = path_arg {
         if !path.is_dir() {

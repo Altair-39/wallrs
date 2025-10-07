@@ -14,7 +14,7 @@ Simple TUI Wallpaper Manger for X11/Wayland.
 
 - feh (for X11)
 - swww (for Wayland)
-- pywal
+- pywal (optiona)
 
 ## Installation
 
@@ -46,7 +46,7 @@ All the configuration happens in a config.toml file.
 - list_position ("top"/"bottom"/"left"/"right")
 - transition_type (only for swww)
 
-Even the position and the visibility of the tabs are customizable. 
+The position and the visibility of the tabs are customizable. 
 
 ```
 
@@ -58,10 +58,18 @@ enabled = true
 name = "Favorites"
 enabled = true
 
-
 [[tabs]]
 name = "History"
 enabled = true
+
+```
+
+The parameter of the wallpapers are customizable.
+
+```
+[commands]
+swww = ["--transition-fps", "60"]
+
 
 ```
 

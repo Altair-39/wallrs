@@ -20,6 +20,7 @@ pub struct Config {
     pub tabs: Vec<TabConfig>,
     pub list_position: String,
     pub transition_type: String,
+    pub pywal: bool,
     pub commands: CommandConfig,
 }
 
@@ -255,6 +256,7 @@ impl Config {
                 keybindings.multi_select = c;
             }
         }
+        let pywal = true;
 
         Self {
             wallpaper_dir,
@@ -265,6 +267,7 @@ impl Config {
             tabs,
             list_position,
             transition_type,
+            pywal,
             commands,
         }
     }
