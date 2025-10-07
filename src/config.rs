@@ -1,6 +1,4 @@
-use std::env;
-use std::fs;
-use std::path::PathBuf;
+use std::{env, fs, path::PathBuf};
 use toml::Value;
 
 use crate::tui::Tab;
@@ -21,13 +19,21 @@ pub struct Config {
     pub keybindings: CustomKeybindings,
     pub tabs: Vec<TabConfig>,
     pub list_position: String,
-    pub transition_type: String, // ✅ NEW: wallpaper transition for swww
+    pub transition_type: String,
+    pub commands: CommandConfig,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum Session {
     X11,
     Wayland,
+}
+
+#[derive(Clone)]
+pub struct CommandConfig {
+    pub wal: Vec<String>,
+    pub swww: Vec<String>,
+    pub feh: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -82,11 +88,37 @@ impl Config {
         let mut list_position = String::from("left");
         let mut transition_type = String::from("fade");
 
-        // Load main config.toml
-        if config_file.exists() {
-            let contents = fs::read_to_string(&config_file).expect("Failed to read config file");
-            let value: Value = toml::from_str(&contents).expect("Invalid TOML in config file");
+        // Default command arguments
+        let default_commands = CommandConfig {
+            wal: vec![
+                "-i".into(),
+                "{path}".into(),
+                "-n".into(),
+                "--backend".into(),
+                "wal".into(),
+            ],
+            swww: vec![
+                "img".into(),
+                "{path}".into(),
+                "--transition-fps".into(),
+                "60".into(),
+                "--transition-type".into(),
+                "{transition}".into(),
+            ],
+            feh: vec!["--bg-scale".into(), "{path}".into()],
+        };
+        let mut commands = default_commands.clone();
 
+        // Load main config.toml if it exists
+        let value: Option<Value> = if config_file.exists() {
+            let contents = fs::read_to_string(&config_file).expect("Failed to read config.toml");
+            Some(toml::from_str(&contents).expect("Invalid TOML in config.toml"))
+        } else {
+            None
+        };
+
+        if let Some(value) = &value {
+            // General settings
             if let Some(path_str) = value.get("wallpaper_dir").and_then(|v| v.as_str()) {
                 wallpaper_dir = PathBuf::from(path_str);
             }
@@ -107,17 +139,66 @@ impl Config {
             }
 
             if let Some(v) = value.get("transition_type").and_then(|v| v.as_str()) {
-                let valid_transitions = ["fade", "wipe", "grow", "outer", "any", "none", "random"];
+                let valid = ["fade", "wipe", "grow", "outer", "any", "none", "random"];
                 let lower = v.to_lowercase();
-                if valid_transitions.contains(&lower.as_str()) {
+                if valid.contains(&lower.as_str()) {
                     transition_type = lower;
                 }
             }
 
-            // Load tab configuration
+            // --- Load commands safely (merge with defaults) ---
+            if let Some(cmds) = value.get("commands").and_then(|v| v.as_table()) {
+                let merge = |default: &Vec<String>, custom: Option<&Vec<Value>>| -> Vec<String> {
+                    match custom {
+                        Some(arr) if !arr.is_empty() => {
+                            // Convert TOML values to strings
+                            let custom_args: Vec<String> = arr
+                                .iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect();
+
+                            let mut merged = Vec::new();
+
+                            // Always start with the default command prefix (like "img")
+                            if !custom_args
+                                .first()
+                                .map_or(false, |a| a == "img" || a == "-i")
+                            {
+                                merged.push(default[0].clone());
+                            }
+
+                            // Add user args
+                            merged.extend(custom_args);
+
+                            // Ensure `{path}` exists somewhere
+                            if !merged.iter().any(|a| a.contains("{path}")) {
+                                merged.push("{path}".into());
+                            }
+
+                            merged
+                        }
+                        _ => default.clone(),
+                    }
+                };
+
+                commands.wal = merge(
+                    &default_commands.wal,
+                    cmds.get("wal").and_then(|v| v.as_array()),
+                );
+                commands.swww = merge(
+                    &default_commands.swww,
+                    cmds.get("swww").and_then(|v| v.as_array()),
+                );
+                commands.feh = merge(
+                    &default_commands.feh,
+                    cmds.get("feh").and_then(|v| v.as_array()),
+                );
+            }
+
+            // --- Load tab configuration ---
             if let Some(tab_val) = value.get("tabs") {
                 if let Some(arr) = tab_val.as_array() {
-                    let mut parsed: Vec<TabConfig> = Vec::new();
+                    let mut parsed = Vec::new();
                     for item in arr {
                         match item {
                             Value::String(s) => {
@@ -142,24 +223,6 @@ impl Config {
                     if !parsed.is_empty() {
                         tabs = parsed;
                     }
-                } else if let Some(tbl) = tab_val.as_table() {
-                    let mut by_name = std::collections::HashMap::new();
-                    for (k, v) in tbl {
-                        if let Some(enabled) = v.as_bool() {
-                            if let Some(tab) = Tab::from_name(k) {
-                                by_name.insert(tab, enabled);
-                            }
-                        }
-                    }
-                    let mut merged: Vec<TabConfig> = Vec::new();
-                    for def in TabConfig::default_tabs() {
-                        let enabled = by_name.get(&def.tab).copied().unwrap_or(def.enabled);
-                        merged.push(TabConfig {
-                            tab: def.tab,
-                            enabled,
-                        });
-                    }
-                    tabs = merged;
                 }
             }
         }
@@ -170,22 +233,26 @@ impl Config {
                 fs::read_to_string(&keybindings_file).expect("Failed to read keybindings.toml");
             let value: Value = toml::from_str(&contents).expect("Invalid TOML in keybindings.toml");
 
-            if let Some(c) = value.get("search").and_then(|v| v.as_str()) {
-                if let Some(ch) = c.chars().next() {
-                    keybindings.search = ch;
-                }
+            if let Some(c) = value
+                .get("search")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.chars().next())
+            {
+                keybindings.search = c;
             }
-
-            if let Some(c) = value.get("favorite").and_then(|v| v.as_str()) {
-                if let Some(ch) = c.chars().next() {
-                    keybindings.favorite = ch;
-                }
+            if let Some(c) = value
+                .get("favorite")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.chars().next())
+            {
+                keybindings.favorite = c;
             }
-
-            if let Some(c) = value.get("multi_select").and_then(|v| v.as_str()) {
-                if let Some(ch) = c.chars().next() {
-                    keybindings.multi_select = ch;
-                }
+            if let Some(c) = value
+                .get("multi_select")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.chars().next())
+            {
+                keybindings.multi_select = c;
             }
         }
 
@@ -198,6 +265,7 @@ impl Config {
             tabs,
             list_position,
             transition_type,
+            commands,
         }
     }
 }

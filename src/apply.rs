@@ -6,47 +6,50 @@ use std::{
 };
 
 pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
-    // Always run wal to generate colors
+    let path_str = path.to_str().unwrap();
+    let transition = if !config.transition_type.is_empty() {
+        config.transition_type.as_str()
+    } else {
+        "fade"
+    };
+
+    // Replace placeholders in args
+    let expand_args = |args: &[String]| -> Vec<String> {
+        args.iter()
+            .map(|arg| {
+                arg.replace("{path}", path_str)
+                    .replace("{transition}", transition)
+            })
+            .collect()
+    };
+
+    // Run wal
     Command::new("wal")
-        .args(&["-i", path.to_str().unwrap(), "-n", "--backend", "wal"])
-        .stdout(Stdio::null()) // discard stdout
-        .stderr(Stdio::null()) // discard stderr
+        .args(expand_args(&config.commands.wal))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()?;
 
     match config.session {
         crate::config::Session::Wayland => {
-            let transition = if !config.transition_type.is_empty() {
-                config.transition_type.as_str()
-            } else {
-                "fade"
-            };
-
             Command::new("swww")
-                .args(&[
-                    "img",
-                    path.to_str().unwrap(),
-                    "--transition-fps",
-                    "60",
-                    "--transition-type",
-                    transition,
-                ])
+                .args(expand_args(&config.commands.swww))
                 .status()?;
         }
-
         crate::config::Session::X11 => {
             Command::new("feh")
-                .args(&["--bg-scale", path.to_str().unwrap()])
+                .args(expand_args(&config.commands.feh))
                 .status()?;
         }
     }
 
-    // Reload waybar (if running)
+    // Reload waybar
     Command::new("pkill")
         .args(&["-USR2", "waybar"])
         .status()
         .ok();
 
-    // Copy current wallpaper to rofi preview folder
+    // Copy current wallpaper
     fs::copy(
         path,
         dirs::home_dir()
