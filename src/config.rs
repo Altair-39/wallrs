@@ -16,6 +16,7 @@ pub struct Config {
     pub session: Session,
     pub vim_motion: bool,
     pub enable_mouse_support: bool,
+    pub image_cache_size: Option<usize>,
     pub keybindings: CustomKeybindings,
     pub tabs: Vec<TabConfig>,
     pub list_position: String,
@@ -88,7 +89,9 @@ impl Config {
         let mut tabs = TabConfig::default_tabs();
         let mut list_position = String::from("left");
         let mut transition_type = String::from("fade");
+        let mut image_cache_size = Some(50);
 
+        let mut pywal = false;
         // Default command arguments
         let default_commands = CommandConfig {
             wal: vec![
@@ -147,6 +150,14 @@ impl Config {
                 }
             }
 
+            if let Some(v) = value.get("pywal").and_then(|v| v.as_bool()) {
+                pywal = v;
+            }
+
+            if let Some(v) = value.get("image_cache_size").and_then(|v| v.as_integer()) {
+                image_cache_size = Some(v as usize);
+            }
+
             // --- Load commands safely (merge with defaults) ---
             if let Some(cmds) = value.get("commands").and_then(|v| v.as_table()) {
                 let merge = |default: &Vec<String>, custom: Option<&Vec<Value>>| -> Vec<String> {
@@ -161,10 +172,7 @@ impl Config {
                             let mut merged = Vec::new();
 
                             // Always start with the default command prefix (like "img")
-                            if !custom_args
-                                .first()
-                                .map_or(false, |a| a == "img" || a == "-i")
-                            {
+                            if !custom_args.first().is_some_and(|a| a == "img" || a == "-i") {
                                 merged.push(default[0].clone());
                             }
 
@@ -197,33 +205,32 @@ impl Config {
             }
 
             // --- Load tab configuration ---
-            if let Some(tab_val) = value.get("tabs") {
-                if let Some(arr) = tab_val.as_array() {
-                    let mut parsed = Vec::new();
-                    for item in arr {
-                        match item {
-                            Value::String(s) => {
-                                if let Some(tab) = Tab::from_name(s) {
-                                    parsed.push(TabConfig { tab, enabled: true });
-                                }
+
+            if let Some(arr) = value.get("tabs").and_then(|v| v.as_array()) {
+                let mut parsed = Vec::new();
+                for item in arr {
+                    match item {
+                        Value::String(s) => {
+                            if let Some(tab) = Tab::from_name(s) {
+                                parsed.push(TabConfig { tab, enabled: true });
                             }
-                            Value::Table(tbl) => {
-                                if let Some(name) = tbl.get("name").and_then(|v| v.as_str()) {
-                                    if let Some(tab) = Tab::from_name(name) {
-                                        let enabled = tbl
-                                            .get("enabled")
-                                            .and_then(|v| v.as_bool())
-                                            .unwrap_or(true);
-                                        parsed.push(TabConfig { tab, enabled });
-                                    }
-                                }
-                            }
-                            _ => {}
                         }
+                        Value::Table(tbl) => {
+                            if let Some(tab) = tbl
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .and_then(Tab::from_name)
+                            {
+                                let enabled =
+                                    tbl.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+                                parsed.push(TabConfig { tab, enabled });
+                            }
+                        }
+                        _ => {}
                     }
-                    if !parsed.is_empty() {
-                        tabs = parsed;
-                    }
+                }
+                if !parsed.is_empty() {
+                    tabs = parsed;
                 }
             }
         }
@@ -256,13 +263,13 @@ impl Config {
                 keybindings.multi_select = c;
             }
         }
-        let pywal = true;
 
         Self {
             wallpaper_dir,
             session,
             vim_motion,
             enable_mouse_support,
+            image_cache_size,
             keybindings,
             tabs,
             list_position,

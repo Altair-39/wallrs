@@ -1,6 +1,5 @@
 use crate::config::Config;
 use std::{
-    fs,
     path::Path,
     process::{Command, Stdio},
 };
@@ -45,7 +44,7 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
 
     // Reload waybar
     Command::new("pkill")
-        .args(&["-USR2", "waybar"])
+        .args(["-USR2", "waybar"])
         .status()
         .ok();
 

@@ -7,32 +7,43 @@ mod tui;
 mod wallpapers;
 
 use apply::apply_wallpaper;
+use clap::Parser;
 use config::Config;
-use crossterm::event::EnableFocusChange;
-use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tui::run_tui;
 use wallpapers::load_wallpapers;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Parse CLI flags
-    let args: Vec<String> = env::args().collect();
-    let print_only = args.iter().any(|a| a == "--print");
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Path to the wallpaper directory
+    #[arg(short, long)]
+    path: Option<PathBuf>,
 
-    // Check if --path flag is provided (directory)
-    let path_arg = args
-        .windows(2)
-        .find(|w| w[0] == "--path")
-        .map(|w| PathBuf::from(&w[1]));
+    /// Only print wallpaper info instead of applying
+    #[arg(short, long)]
+    print: bool,
+
+    /// Generate colors using pywal
+    #[arg(short, long)]
+    pywal: Option<bool>,
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse CLI flags
+    let args = Args::parse();
 
     // Load config
     let mut cfg = Config::load();
 
-    cfg.pywal = args.iter().any(|a| a == "--pywal");
+    if let Some(pywal_flag) = args.pywal {
+        cfg.pywal = pywal_flag; // only override if user passed --pywal
+    }
     // If --path is set, override wallpaper_dir
-    if let Some(path) = path_arg {
+    if let Some(path) = args.path {
         if !path.is_dir() {
             eprintln!(
                 "Error: specified path is not a directory: {}",
@@ -51,21 +62,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Run TUI to select a wallpaper
-    let selected_wallpaper = run_tui(&wallpapers, &cfg)?;
+    let selected_wallpaper = run_tui(&wallpapers, &cfg).await?;
 
-    if print_only {
-        Command::new("wal")
-            .args(&[
-                "-i",
-                selected_wallpaper.to_str().unwrap(),
-                "-n",
-                "--backend",
-                "wal",
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()?;
-
+    if args.print {
+        if cfg.pywal {
+            Command::new("wal")
+                .args([
+                    "-i",
+                    selected_wallpaper.to_str().unwrap(),
+                    "-n",
+                    "--backend",
+                    "wal",
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()?;
+        }
         // Save selected wallpaper to cache as current.<ext>
         let cache_dir: PathBuf = dirs::cache_dir()
             .unwrap_or_else(|| PathBuf::from("/tmp"))
@@ -79,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let cache_file = cache_dir.join(format!("current.{}", ext));
 
         fs::copy(&selected_wallpaper, &cache_file)?;
-        Command::new("pkill").args(&["-USR2", "waybar"]).status()?;
+        Command::new("pkill").args(["-USR2", "waybar"]).status()?;
 
         println!("Saved selection to {}", cache_file.display());
     } else {

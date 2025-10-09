@@ -7,7 +7,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use image::ImageReader;
+use image::DynamicImage;
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -16,11 +16,62 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs},
 };
 use ratatui_image::{Resize, StatefulImage, picker::Picker, protocol::StatefulProtocol};
+use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use strum_macros::Display;
+use tokio::sync::mpsc;
 
+// ---------------------------
+// Image Cache
+// ---------------------------
+
+#[derive(Clone)]
+struct CachedImage {
+    image: Arc<DynamicImage>,
+}
+
+impl CachedImage {
+    fn new(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let image = image::io::Reader::open(path)?
+            .with_guessed_format()?
+            .decode()?;
+        Ok(Self {
+            image: Arc::new(image),
+        })
+    }
+}
+
+struct ImageCache {
+    cache: HashMap<PathBuf, CachedImage>,
+    max_size: usize,
+}
+
+impl ImageCache {
+    fn new(max_size: usize) -> Self {
+        Self {
+            cache: HashMap::with_capacity(max_size),
+            max_size,
+        }
+    }
+
+    fn get(&mut self, path: &PathBuf) -> Option<&CachedImage> {
+        self.cache.get(path)
+    }
+
+    fn insert(&mut self, path: PathBuf, image: CachedImage) {
+        // Simple LRU-like eviction: remove oldest entries if cache is full
+        if self.cache.len() >= self.max_size
+            && let Some(key) = self.cache.keys().next().cloned()
+        {
+            self.cache.remove(&key);
+        }
+
+        self.cache.insert(path, image);
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
 pub enum Tab {
     #[strum(serialize = "Wallpapers")]
@@ -57,12 +108,12 @@ impl FromStr for Tab {
 // TUI Entry Point
 // ---------------------------
 
-pub fn run_tui(
+pub async fn run_tui(
     wallpapers: &[PathBuf],
     config: &AppConfig,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let mut tui = TuiApp::new(wallpapers, config)?;
-    tui.run()
+    tui.run().await
 }
 
 // ---------------------------
@@ -83,10 +134,20 @@ pub struct TuiApp<'a> {
     last_preview: Option<PathBuf>,
     multi_select: bool,
     selected_items: Vec<usize>,
-
+    dirty: bool,
     // Image rendering
     picker: Picker,
     preview_state: Option<StatefulProtocol>,
+    image_cache: ImageCache,
+
+    preview_tx: mpsc::Sender<(
+        PathBuf,
+        Result<CachedImage, Box<dyn std::error::Error + Send + Sync>>,
+    )>,
+    preview_rx: mpsc::Receiver<(
+        PathBuf,
+        Result<CachedImage, Box<dyn std::error::Error + Send + Sync>>,
+    )>,
 }
 
 impl<'a> TuiApp<'a> {
@@ -114,6 +175,10 @@ impl<'a> TuiApp<'a> {
 
         let picker = Picker::from_query_stdio()?;
 
+        // Initialize image cache with reasonable default size
+        let cache_size = config.image_cache_size.unwrap_or(50); // configurable cache size
+        let image_cache = ImageCache::new(cache_size);
+        let (preview_tx, preview_rx) = mpsc::channel(10);
         Ok(Self {
             terminal,
             config,
@@ -132,24 +197,69 @@ impl<'a> TuiApp<'a> {
             last_preview: None,
             multi_select: false,
             selected_items: Vec::new(),
+            dirty: true,
             picker,
             preview_state: None,
+            image_cache,
+            preview_tx,
+            preview_rx,
         })
     }
 
-    pub fn run(&mut self) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    pub async fn run(&mut self) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        // Preload images
+        let filtered = self.filter_items();
+        let preload_paths: Vec<PathBuf> = filtered.iter().take(10).cloned().collect();
+        self.preload_images(&preload_paths);
+
         loop {
+            // Check for completed previews asynchronously
+            while let Ok((path, result)) = self.preview_rx.try_recv() {
+                if let Ok(cached_image) = result {
+                    self.image_cache.insert(path.clone(), cached_image.clone());
+
+                    if Some(&path) == self.filter_items().get(self.selected) {
+                        self.preview_state = Some(
+                            self.picker
+                                .new_resize_protocol(cached_image.image.as_ref().clone()),
+                        );
+                        self.dirty = true;
+                    }
+                }
+            }
+
             let filtered = self.filter_items();
             self.adjust_selection(&filtered);
-            self.draw_ui(&filtered)?;
 
-            if event::poll(std::time::Duration::from_millis(100))? {
+            if self.dirty {
+                self.draw_ui(&filtered)?;
+                self.dirty = false;
+            }
+
+            if event::poll(std::time::Duration::from_millis(50))? {
                 if let Some(selected) = self.handle_event(&filtered)? {
                     self.cleanup()?;
                     return Ok(selected);
                 }
             }
+
+            // Give async tasks a chance to run
+            tokio::task::yield_now().await;
         }
+    }
+
+    fn request_preview(&self, path: PathBuf) {
+        let tx = self.preview_tx.clone();
+        let path_clone = path.clone(); // <-- clone for closure
+        tokio::spawn(async move {
+            // Use spawn_blocking for blocking image loading
+            let result = tokio::task::spawn_blocking(move || CachedImage::new(&path_clone))
+                .await
+                .unwrap_or_else(|e| Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>));
+
+            // Now we can send the original path along with result
+            let _ = tx.send((path, result)).await;
+        });
     }
 
     // --------------------
@@ -212,9 +322,11 @@ impl<'a> TuiApp<'a> {
         if filtered.is_empty() {
             self.selected = 0;
             self.list_state.select(None);
+            self.dirty = true;
         } else if self.selected >= filtered.len() {
             self.selected = filtered.len() - 1;
             self.list_state.select(Some(self.selected));
+            self.dirty = true;
         }
     }
 
@@ -239,7 +351,7 @@ impl<'a> TuiApp<'a> {
         let title = match self.current_tab {
             Tab::Wallpapers => {
                 if self.in_search {
-                    format!("Search: {}", self.search_query)
+                    format!("Search: {} ", self.search_query,)
                 } else {
                     "Wallpapers".into()
                 }
@@ -254,6 +366,7 @@ impl<'a> TuiApp<'a> {
             .enumerate()
             .map(|(i, p)| {
                 let mut name = p.file_name().unwrap().to_string_lossy().to_string();
+
                 if self.favorites.contains(p) {
                     name.push_str(" ★");
                 }
@@ -303,15 +416,13 @@ impl<'a> TuiApp<'a> {
             }
         };
 
-        // Update preview if selection changed
-        if !filtered.is_empty() && Some(&filtered[self.selected]) != self.last_preview.as_ref() {
-            let img = ImageReader::open(&filtered[self.selected])?
-                .with_guessed_format()?
-                .decode()?;
-            self.preview_state = Some(self.picker.new_resize_protocol(img));
-            self.last_preview = Some(filtered[self.selected].clone());
-        }
+        // Update preview if selection changed - using cache
 
+        if !filtered.is_empty() && Some(&filtered[self.selected]) != self.last_preview.as_ref() {
+            let path = filtered[self.selected].clone();
+            self.last_preview = Some(path.clone());
+            self.request_preview(path);
+        }
         // Compute scrollbar for list
         let total = filtered.len() as u16;
         let height = list_area.height;
@@ -366,6 +477,21 @@ impl<'a> TuiApp<'a> {
 
         Ok(())
     }
+
+    // --------------------
+    // Cache management methods
+    // --------------------
+
+    fn preload_images(&mut self, paths: &[PathBuf]) {
+        for path in paths.iter().take(self.image_cache.max_size) {
+            if self.image_cache.get(path).is_none() {
+                if let Ok(cached_image) = CachedImage::new(path) {
+                    self.image_cache.insert(path.clone(), cached_image);
+                }
+            }
+        }
+    }
+
     // --------------------
     // Event Handling
     // --------------------
@@ -374,6 +500,7 @@ impl<'a> TuiApp<'a> {
         &mut self,
         filtered: &[PathBuf],
     ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+        self.dirty = true;
         match event::read()? {
             event::Event::Key(key) => {
                 let active_tabs = self.active_tabs();
