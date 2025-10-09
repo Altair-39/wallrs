@@ -27,7 +27,7 @@ struct Args {
     print: bool,
 
     /// Generate colors using pywal
-    #[arg(short, long)]
+    #[arg(long)]
     pywal: Option<bool>,
 }
 

@@ -35,7 +35,7 @@ struct CachedImage {
 
 impl CachedImage {
     fn new(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let image = image::io::Reader::open(path)?
+        let image = image::ImageReader::open(path)?
             .with_guessed_format()?
             .decode()?;
         Ok(Self {
