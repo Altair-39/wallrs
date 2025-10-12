@@ -29,6 +29,15 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
             .stderr(Stdio::null())
             .status()?;
     }
+    if config.hellwal {
+        // Run hellwal
+        Command::new("hellawal")
+            .args(expand_args(&config.commands.wal))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+    }
+
     match config.session {
         crate::config::Session::Wayland => {
             Command::new("swww")

@@ -22,6 +22,7 @@ pub struct Config {
     pub list_position: String,
     pub transition_type: String,
     pub pywal: bool,
+    pub hellwal: bool,
     pub commands: CommandConfig,
 }
 
@@ -92,6 +93,7 @@ impl Config {
         let mut image_cache_size = Some(50);
 
         let mut pywal = false;
+        let mut hellwal = false;
         // Default command arguments
         let default_commands = CommandConfig {
             wal: vec![
@@ -153,7 +155,9 @@ impl Config {
             if let Some(v) = value.get("pywal").and_then(|v| v.as_bool()) {
                 pywal = v;
             }
-
+            if let Some(v) = value.get("hellwal").and_then(|v| v.as_bool()) {
+                hellwal = v;
+            }
             if let Some(v) = value.get("image_cache_size").and_then(|v| v.as_integer()) {
                 image_cache_size = Some(v as usize);
             }
@@ -275,6 +279,7 @@ impl Config {
             list_position,
             transition_type,
             pywal,
+            hellwal,
             commands,
         }
     }

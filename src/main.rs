@@ -29,6 +29,10 @@ struct Args {
     /// Generate colors using pywal
     #[arg(long)]
     pywal: Option<bool>,
+
+    /// Generate colors using hellwal
+    #[arg(long)]
+    hellwal: Option<bool>,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -41,6 +45,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(pywal_flag) = args.pywal {
         cfg.pywal = pywal_flag; // only override if user passed --pywal
+    }
+    if let Some(hellwal_flag) = args.hellwal {
+        cfg.hellwal = hellwal_flag; // only override if user passed --pywal
     }
     // If --path is set, override wallpaper_dir
     if let Some(path) = args.path {
