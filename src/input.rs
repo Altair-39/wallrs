@@ -3,7 +3,7 @@ use crate::persistence::save_list;
 use crate::tui::Tab;
 use crossterm::event::{DisableMouseCapture, KeyCode};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
+use crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode};
 use ratatui::widgets::ListState;
 use std::io;
 use std::path::PathBuf;
@@ -130,11 +130,38 @@ pub fn handle_input(
                 if *multi_select && !selected_items.contains(selected) {
                     selected_items.push(*selected);
                 }
+            } else {
+                *selected -= filtered.len().saturating_sub(1);
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
+            }
+        }
+        KeyCode::PageDown => {
+            if *selected < filtered.len().saturating_sub(5) {
+                *selected += 5;
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
+            } else {
+                *selected -= filtered.len().saturating_sub(1);
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
             }
         }
         KeyCode::Char('j') if *vim_motion => {
             if *selected < filtered.len().saturating_sub(1) {
                 *selected += 1;
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
+            } else {
+                *selected -= filtered.len().saturating_sub(1);
                 list_state.select(Some(*selected));
                 if *multi_select && !selected_items.contains(selected) {
                     selected_items.push(*selected);
@@ -148,11 +175,38 @@ pub fn handle_input(
                 if *multi_select && !selected_items.contains(selected) {
                     selected_items.push(*selected);
                 }
+            } else {
+                *selected += filtered.len();
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
+            }
+        }
+        KeyCode::PageUp => {
+            if *selected > 4 {
+                *selected -= 5;
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
+            } else {
+                *selected += filtered.len();
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
             }
         }
         KeyCode::Char('k') if *vim_motion => {
             if *selected > 0 {
                 *selected -= 1;
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
+            } else {
+                *selected += filtered.len();
                 list_state.select(Some(*selected));
                 if *multi_select && !selected_items.contains(selected) {
                     selected_items.push(*selected);
