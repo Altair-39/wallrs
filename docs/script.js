@@ -91,7 +91,6 @@ Commands demonstrated:<br>
     });
     videoPlaceholder.classList.remove("hidden");
   });
-
   // Focus on input when clicking anywhere in the terminal
   terminalBody.addEventListener("click", function () {
     commandInput.focus();
@@ -119,11 +118,9 @@ Commands demonstrated:<br>
         terminalBody.scrollTop = terminalBody.scrollHeight;
       }
     } else if (e.key === "Tab") {
-      // Tab navigation between sections
+      // Auto-complete on Tab
       e.preventDefault();
-      if (e.shiftKey) {
-        navigateTabs(+1);
-      }
+      autoComplete();
     } else if (e.key === "ArrowUp") {
       // Command history navigation
       e.preventDefault();
@@ -134,24 +131,6 @@ Commands demonstrated:<br>
       navigateHistory("down");
     }
   });
-
-  function navigateTabs(direction) {
-    const currentActive = document.querySelector(".nav-item.active");
-    const allTabs = Array.from(navItems);
-    const currentIndex = allTabs.indexOf(currentActive);
-
-    let nextIndex;
-    if (direction === 1) {
-      // Forward (Tab)
-      nextIndex = (currentIndex + 1) % allTabs.length;
-    } else {
-      // Backward (Shift+Tab)
-      nextIndex = (currentIndex - 1 + allTabs.length) % allTabs.length;
-    }
-
-    // Click the next tab
-    allTabs[nextIndex].click();
-  }
 
   function autoComplete() {
     const input = commandInput.value.trim();
