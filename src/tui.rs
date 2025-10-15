@@ -1,21 +1,24 @@
 use crate::config::Config as AppConfig;
 use crate::input::{Input, handle_input};
 use crate::mouse::{MouseInput, handle_mouse};
-use crate::persistence::load_list;
+use crate::persistence::{load_list, save_list};
+use crossterm::event::KeyCode;
 use crossterm::event::{self, EnableMouseCapture};
 use crossterm::execute;
 use image::DynamicImage;
 use ratatui::{
-    Terminal,
+    Frame, Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Style},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs},
+    text::Text,
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Tabs},
 };
 use ratatui_image::{Resize, StatefulImage, picker::Picker, protocol::StatefulProtocol};
 use std::collections::HashMap;
+use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use strum_macros::Display;
@@ -69,6 +72,11 @@ impl ImageCache {
         self.cache.insert(path, image);
     }
 }
+
+// ---------------------------
+// Tab Enum
+// ---------------------------
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
 pub enum Tab {
     #[strum(serialize = "Wallpapers")]
@@ -102,6 +110,16 @@ impl FromStr for Tab {
 }
 
 // ---------------------------
+// Rename State
+// ---------------------------
+
+pub struct RenameState {
+    pub original_path: PathBuf,
+    pub current_input: String,
+    pub error: Option<String>,
+}
+
+// ---------------------------
 // TUI Application
 // ---------------------------
 
@@ -124,7 +142,6 @@ pub struct TuiApp<'a> {
     picker: Picker,
     preview_state: Option<StatefulProtocol>,
     image_cache: ImageCache,
-
     preview_tx: mpsc::Sender<(
         PathBuf,
         Result<CachedImage, Box<dyn std::error::Error + Send + Sync>>,
@@ -133,6 +150,7 @@ pub struct TuiApp<'a> {
         PathBuf,
         Result<CachedImage, Box<dyn std::error::Error + Send + Sync>>,
     )>,
+    rename_state: Option<RenameState>,
 }
 
 impl<'a> TuiApp<'a> {
@@ -159,9 +177,10 @@ impl<'a> TuiApp<'a> {
         let picker = Picker::from_query_stdio()?;
 
         // Initialize image cache with reasonable default size
-        let cache_size = config.image_cache_size.unwrap_or(50); // configurable cache size
+        let cache_size = config.image_cache_size.unwrap_or(50);
         let image_cache = ImageCache::new(cache_size);
         let (preview_tx, preview_rx) = mpsc::channel(10);
+
         Ok(Self {
             terminal,
             config,
@@ -186,6 +205,7 @@ impl<'a> TuiApp<'a> {
             image_cache,
             preview_tx,
             preview_rx,
+            rename_state: None,
         })
     }
 
@@ -219,27 +239,25 @@ impl<'a> TuiApp<'a> {
                 self.dirty = false;
             }
 
-            if event::poll(std::time::Duration::from_millis(50))? {
+            if event::poll(std::time::Duration::from_millis(16))? {
                 if let Some(selected) = self.handle_event(&filtered)? {
                     return Ok(selected);
                 }
+
+                self.dirty = true;
             }
 
-            // Give async tasks a chance to run
             tokio::task::yield_now().await;
         }
     }
-
     fn request_preview(&self, path: PathBuf) {
         let tx = self.preview_tx.clone();
-        let path_clone = path.clone(); // <-- clone for closure
+        let path_clone = path.clone();
         tokio::spawn(async move {
-            // Use spawn_blocking for blocking image loading
             let result = tokio::task::spawn_blocking(move || CachedImage::new(&path_clone))
                 .await
                 .unwrap_or_else(|e| Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>));
 
-            // Now we can send the original path along with result
             let _ = tx.send((path, result)).await;
         });
     }
@@ -313,6 +331,68 @@ impl<'a> TuiApp<'a> {
     }
 
     // --------------------
+    // File Operations
+    // --------------------
+
+    fn rename_wallpaper(&mut self, old_path: &Path, new_name: &str) -> io::Result<PathBuf> {
+        let parent_dir = old_path
+            .parent()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid file path"))?;
+
+        let mut new_path = parent_dir.join(new_name);
+
+        // Add file extension if missing
+        if let Some(ext) = old_path.extension()
+            && new_path.extension().is_none()
+        {
+            new_path.set_extension(ext);
+        }
+
+        // Check if new name already exists
+        if new_path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "File with that name already exists",
+            ));
+        }
+
+        fs::rename(old_path, &new_path)?;
+
+        // Update all references to the old path
+        self.update_path_references(old_path, &new_path);
+
+        Ok(new_path)
+    }
+
+    fn update_path_references(&mut self, old_path: &Path, new_path: &PathBuf) {
+        // Update wallpapers list
+        if let Some(pos) = self.wallpapers.iter().position(|p| p == old_path) {
+            self.wallpapers[pos] = new_path.clone();
+        }
+
+        // Update history
+        if let Some(pos) = self.history.iter().position(|p| p == old_path) {
+            self.history[pos] = new_path.clone();
+        }
+
+        // Update favorites
+        if let Some(pos) = self.favorites.iter().position(|p| p == old_path) {
+            self.favorites[pos] = new_path.clone();
+            save_list("favorites.txt", &self.favorites);
+        }
+
+        // Update image cache
+        if let Some(image) = self.image_cache.cache.remove(old_path) {
+            self.image_cache.cache.insert(new_path.clone(), image);
+        }
+
+        // Update last_preview if it was the renamed file
+        if self.last_preview.as_ref() == Some(&PathBuf::from(old_path)) {
+            self.last_preview = Some(new_path.clone());
+        }
+    }
+
+    // --------------------
     // UI Rendering
     // --------------------
 
@@ -333,7 +413,7 @@ impl<'a> TuiApp<'a> {
         let title = match self.current_tab {
             Tab::Wallpapers => {
                 if self.in_search {
-                    format!("Search: {} ", self.search_query,)
+                    format!("Search: {} ", self.search_query)
                 } else {
                     "Wallpapers".into()
                 }
@@ -398,18 +478,21 @@ impl<'a> TuiApp<'a> {
             }
         };
 
-        // Update preview if selection changed - using cache
-
+        // Update preview if selection changed
         if !filtered.is_empty() && Some(&filtered[self.selected]) != self.last_preview.as_ref() {
             let path = filtered[self.selected].clone();
             self.last_preview = Some(path.clone());
             self.request_preview(path);
         }
+
         // Compute scrollbar for list
         let total = filtered.len() as u16;
         let height = list_area.height;
         let scroll_ratio = (self.selected as f32 / total.max(1) as f32).min(1.0);
         let scroll_pos = (scroll_ratio * (height - 1) as f32).round() as u16;
+
+        // Store rename_state in a local variable to avoid borrowing issues
+        let rename_state = self.rename_state.as_ref();
 
         // Draw UI
         self.terminal.draw(|f| {
@@ -455,9 +538,78 @@ impl<'a> TuiApp<'a> {
                 let widget = StatefulImage::new();
                 f.render_stateful_widget(widget.resize(Resize::Fit(None)), preview_area, state);
             }
+
+            // Draw rename dialog if active
+            if let Some(rename_state) = rename_state {
+                Self::draw_rename_dialog(f, area_rect, rename_state);
+            }
         })?;
 
         Ok(())
+    }
+
+    fn draw_rename_dialog(f: &mut Frame, area: Rect, rename_state: &RenameState) {
+        // Create a centered dialog area
+        let width = 50;
+        let height = 10;
+        let x = (area.width - width) / 2;
+        let y = (area.height - height) / 2;
+        let dialog_area = Rect::new(x, y, width, height);
+
+        // Dialog background
+        let block = Block::default()
+            .title(" Rename Wallpaper ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow));
+
+        f.render_widget(Clear, dialog_area);
+        f.render_widget(block, dialog_area);
+
+        // Content area inside the dialog
+        let inner_area = dialog_area.inner(Margin::new(1, 1));
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // Original name
+                Constraint::Length(3), // Input field
+                Constraint::Length(1), // Error message
+                Constraint::Min(1),    // Spacer
+                Constraint::Length(1), // Instructions
+            ])
+            .split(inner_area);
+
+        // Original file name
+        let original_name = Text::raw(format!(
+            "Original: {}",
+            rename_state
+                .original_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+        ));
+        f.render_widget(Paragraph::new(original_name), chunks[0]);
+
+        // Input field
+        let input = Paragraph::new(rename_state.current_input.as_str())
+            .style(Style::default().fg(Color::Yellow))
+            .block(Block::default().borders(Borders::ALL).title("New Name"));
+        f.render_widget(input, chunks[1]);
+
+        // Error message
+        if let Some(error) = &rename_state.error {
+            let error_text = Text::styled(error, Style::default().fg(Color::Red));
+            f.render_widget(Paragraph::new(error_text), chunks[2]);
+        }
+
+        // Instructions
+        let instructions = Text::raw("Enter: Confirm | Esc: Cancel");
+        f.render_widget(Paragraph::new(instructions), chunks[4]);
+
+        // Set cursor position in input field
+        f.set_cursor_position(ratatui::prelude::Position::new(
+            chunks[1].x + rename_state.current_input.len() as u16 + 1,
+            chunks[1].y + 1,
+        ));
     }
 
     // --------------------
@@ -466,10 +618,10 @@ impl<'a> TuiApp<'a> {
 
     fn preload_images(&mut self, paths: &[PathBuf]) {
         for path in paths.iter().take(self.image_cache.max_size) {
-            if self.image_cache.get(path).is_none() {
-                if let Ok(cached_image) = CachedImage::new(path) {
-                    self.image_cache.insert(path.clone(), cached_image);
-                }
+            if self.image_cache.get(path).is_none()
+                && let Ok(cached_image) = CachedImage::new(path)
+            {
+                self.image_cache.insert(path.clone(), cached_image);
             }
         }
     }
@@ -483,44 +635,124 @@ impl<'a> TuiApp<'a> {
         filtered: &[PathBuf],
     ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
         self.dirty = true;
-        match event::read()? {
-            event::Event::Key(key) => {
-                let active_tabs = self.active_tabs();
-                let mut filtered_vec = filtered.to_vec();
-                let mut input = Input {
-                    key: key.code,
-                    current_tab: &mut self.current_tab,
-                    in_search: &mut self.in_search,
-                    search_query: &mut self.search_query,
-                    selected: &mut self.selected,
-                    list_state: &mut self.list_state,
-                    filtered: &mut filtered_vec,
-                    history: &mut self.history,
-                    favorites: &mut self.favorites,
-                    vim_motion: self.config.vim_motion,
-                    mouse_support: self.config.mouse_support,
-                    keybindings: &self.config.keybindings,
-                    active_tabs: &active_tabs,
-                };
-                if let Some(sel) =
-                    handle_input(&mut input, &mut self.multi_select, &mut self.selected_items)
-                {
-                    return Ok(Some(sel));
+
+        let event = event::read()?;
+
+        if self.rename_state.is_some() {
+            match event {
+                event::Event::Key(key) => {
+                    match key.code {
+                        KeyCode::Enter => {
+                            let (original_path, new_name) = {
+                                let rename_state = self.rename_state.as_mut().unwrap();
+                                let new_name = rename_state.current_input.trim().to_string();
+                                if new_name.is_empty() {
+                                    rename_state.error = Some("Name cannot be empty".to_string());
+                                    return Ok(None);
+                                }
+                                (rename_state.original_path.clone(), new_name)
+                            };
+
+                            match self.rename_wallpaper(&original_path, &new_name) {
+                                Ok(new_path) => {
+                                    self.rename_state = None;
+
+                                    if self.last_preview.as_ref() == Some(&original_path) {
+                                        self.last_preview = Some(new_path.clone());
+                                        self.request_preview(new_path);
+                                    } else {
+                                        let current_filtered = self.filter_items();
+                                        if let Some(current_selected) =
+                                            current_filtered.get(self.selected)
+                                            && current_selected == &new_path
+                                        {
+                                            self.last_preview = Some(new_path.clone());
+                                            self.request_preview(new_path);
+                                        }
+                                    }
+
+                                    return Ok(None);
+                                }
+                                Err(e) => {
+                                    if let Some(rs) = self.rename_state.as_mut() {
+                                        rs.error = Some(e.to_string());
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Esc => {
+                            self.rename_state = None;
+                            return Ok(None);
+                        }
+                        KeyCode::Char(c) => {
+                            if let Some(rs) = self.rename_state.as_mut() {
+                                rs.current_input.push(c);
+                                rs.error = None;
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            if let Some(rs) = self.rename_state.as_mut() {
+                                rs.current_input.pop();
+                                rs.error = None;
+                            }
+                        }
+                        _ => {}
+                    }
+                    return Ok(None);
                 }
+                _ => {}
             }
-            event::Event::Mouse(me) if self.config.mouse_support => {
-                let mut mouse_input = MouseInput {
-                    me,
-                    selected: &mut self.selected,
-                    list_state: &mut self.list_state,
-                    filtered,
-                    list_area: &Rect::new(0, 3, 40, 20),
-                    tabs_area: &Rect::new(0, 0, 80, 3),
-                    current_tab: &mut self.current_tab,
-                };
-                handle_mouse(&mut mouse_input);
+        } else {
+            match event {
+                event::Event::Key(key) => {
+                    let active_tabs = self.active_tabs();
+                    let mut filtered_vec = filtered.to_vec();
+                    let mut input = Input {
+                        key: key.code,
+                        current_tab: &mut self.current_tab,
+                        in_search: &mut self.in_search,
+                        search_query: &mut self.search_query,
+                        selected: &mut self.selected,
+                        list_state: &mut self.list_state,
+                        filtered: &mut filtered_vec,
+                        history: &mut self.history,
+                        favorites: &mut self.favorites,
+                        vim_motion: self.config.vim_motion,
+                        mouse_support: self.config.mouse_support,
+                        keybindings: &self.config.keybindings,
+                        active_tabs: &active_tabs,
+                    };
+
+                    if let Some(sel) =
+                        handle_input(&mut input, &mut self.multi_select, &mut self.selected_items)
+                    {
+                        if sel == PathBuf::from("__rename__") {
+                            if !filtered.is_empty() {
+                                self.rename_state = Some(RenameState {
+                                    original_path: filtered[self.selected].clone(),
+                                    current_input: String::new(),
+                                    error: None,
+                                });
+                            }
+                            return Ok(None);
+                        }
+                        return Ok(Some(sel));
+                    }
+                }
+                event::Event::Mouse(me) if self.config.mouse_support => {
+                    let mut mouse_input = MouseInput {
+                        me,
+                        selected: &mut self.selected,
+                        list_state: &mut self.list_state,
+                        filtered,
+                        list_area: &Rect::new(0, 3, 40, 20),
+                        tabs_area: &Rect::new(0, 0, 80, 3),
+                        current_tab: &mut self.current_tab,
+                    };
+                    handle_mouse(&mut mouse_input);
+                }
+                _ => {}
             }
-            _ => {}
         }
         Ok(None)
     }

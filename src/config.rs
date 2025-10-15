@@ -8,6 +8,7 @@ pub struct CustomKeybindings {
     pub search: char,
     pub favorite: char,
     pub multi_select: char,
+    pub rename: char,
 }
 
 #[derive(Clone)]
@@ -266,6 +267,13 @@ impl Config {
             {
                 keybindings.multi_select = c;
             }
+            if let Some(c) = value
+                .get("rename")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.chars().next())
+            {
+                keybindings.rename = c;
+            }
         }
 
         Self {
@@ -291,6 +299,7 @@ impl Default for CustomKeybindings {
             search: '/',
             favorite: 'f',
             multi_select: 'v',
+            rename: 'r',
         }
     }
 }

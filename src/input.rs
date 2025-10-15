@@ -3,7 +3,7 @@ use crate::persistence::save_list;
 use crate::tui::Tab;
 use crossterm::event::{DisableMouseCapture, KeyCode};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
+use crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode};
 use ratatui::widgets::ListState;
 use std::io;
 use std::path::PathBuf;
@@ -176,7 +176,7 @@ pub fn handle_input(
                     selected_items.push(*selected);
                 }
             } else {
-                *selected += 1;
+                *selected += filtered.len();
                 list_state.select(Some(*selected));
                 if *multi_select && !selected_items.contains(selected) {
                     selected_items.push(*selected);
@@ -190,11 +190,23 @@ pub fn handle_input(
                 if *multi_select && !selected_items.contains(selected) {
                     selected_items.push(*selected);
                 }
+            } else {
+                *selected += filtered.len();
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
             }
         }
         KeyCode::Char('k') if *vim_motion => {
             if *selected > 0 {
                 *selected -= 1;
+                list_state.select(Some(*selected));
+                if *multi_select && !selected_items.contains(selected) {
+                    selected_items.push(*selected);
+                }
+            } else {
+                *selected += filtered.len();
                 list_state.select(Some(*selected));
                 if *multi_select && !selected_items.contains(selected) {
                     selected_items.push(*selected);
@@ -223,8 +235,15 @@ pub fn handle_input(
             }
             save_list("favorites.txt", favorites);
         }
+        KeyCode::Char(c)
+            if *c == keybindings.rename
+                && !filtered.is_empty()
+                && !*in_search
+                && *current_tab == Tab::Wallpapers =>
+        {
+            return Some(PathBuf::from("__rename__"));
+        }
 
-        // Select / confirm (always a single PathBuf for applying wallpaper)
         KeyCode::Enter if !*in_search && !filtered.is_empty() => {
             let sel = filtered[*selected].clone();
             if *current_tab == Tab::Wallpapers {
