@@ -42,7 +42,7 @@ All the configuration happens in a config.toml file.
 
 - wallpaper_dir: the directory root of the wallpapers library.
 - vim_motion (true/false).
-- enable_mouse_support (true/false).
+- mouse_support (true/false).
 - list_position ("top"/"bottom"/"left"/"right")
 - transition_type (only for swww)
 

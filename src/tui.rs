@@ -2,11 +2,8 @@ use crate::config::Config as AppConfig;
 use crate::input::{Input, handle_input};
 use crate::mouse::{MouseInput, handle_mouse};
 use crate::persistence::load_list;
-use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture};
+use crossterm::event::{self, EnableMouseCapture};
 use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
 use image::DynamicImage;
 use ratatui::{
     Terminal,
@@ -105,18 +102,6 @@ impl FromStr for Tab {
 }
 
 // ---------------------------
-// TUI Entry Point
-// ---------------------------
-
-pub async fn run_tui(
-    wallpapers: &[PathBuf],
-    config: &AppConfig,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let mut tui = TuiApp::new(wallpapers, config)?;
-    tui.run().await
-}
-
-// ---------------------------
 // TUI Application
 // ---------------------------
 
@@ -155,12 +140,10 @@ impl<'a> TuiApp<'a> {
         wallpapers: &[PathBuf],
         config: &'a AppConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        if config.enable_mouse_support {
+        if config.mouse_support {
             execute!(io::stdout(), EnableMouseCapture)?;
         }
-        enable_raw_mode()?;
 
-        execute!(io::stdout(), EnterAlternateScreen)?;
         let stdout = io::stdout();
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
@@ -238,7 +221,6 @@ impl<'a> TuiApp<'a> {
 
             if event::poll(std::time::Duration::from_millis(50))? {
                 if let Some(selected) = self.handle_event(&filtered)? {
-                    self.cleanup()?;
                     return Ok(selected);
                 }
             }
@@ -516,7 +498,7 @@ impl<'a> TuiApp<'a> {
                     history: &mut self.history,
                     favorites: &mut self.favorites,
                     vim_motion: self.config.vim_motion,
-                    enable_mouse_support: self.config.enable_mouse_support,
+                    mouse_support: self.config.mouse_support,
                     keybindings: &self.config.keybindings,
                     active_tabs: &active_tabs,
                 };
@@ -526,7 +508,7 @@ impl<'a> TuiApp<'a> {
                     return Ok(Some(sel));
                 }
             }
-            event::Event::Mouse(me) if self.config.enable_mouse_support => {
+            event::Event::Mouse(me) if self.config.mouse_support => {
                 let mut mouse_input = MouseInput {
                     me,
                     selected: &mut self.selected,
@@ -541,18 +523,5 @@ impl<'a> TuiApp<'a> {
             _ => {}
         }
         Ok(None)
-    }
-
-    // --------------------
-    // Cleanup
-    // --------------------
-
-    fn cleanup(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if self.config.enable_mouse_support {
-            execute!(io::stdout(), DisableMouseCapture).ok();
-        }
-        disable_raw_mode()?;
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
-        Ok(())
     }
 }

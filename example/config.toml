@@ -7,7 +7,7 @@ wallpaper_dir = "/home/altair/Pictures/Wallpapers"
 vim_motion = true
 
 # Enable mouse input (optional)
-enable_mouse_support = true
+mouse_support = true
 
 # List Position
 list_position = "bottom"

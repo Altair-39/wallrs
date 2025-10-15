@@ -15,7 +15,7 @@ pub struct Config {
     pub wallpaper_dir: PathBuf,
     pub session: Session,
     pub vim_motion: bool,
-    pub enable_mouse_support: bool,
+    pub mouse_support: bool,
     pub image_cache_size: Option<usize>,
     pub keybindings: CustomKeybindings,
     pub tabs: Vec<TabConfig>,
@@ -85,7 +85,7 @@ impl Config {
         let default_dir = dirs::home_dir().unwrap().join("Pictures/Wallpapers");
         let mut wallpaper_dir = default_dir;
         let mut vim_motion = false;
-        let mut enable_mouse_support = false;
+        let mut mouse_support = false;
         let mut keybindings = CustomKeybindings::default();
         let mut tabs = TabConfig::default_tabs();
         let mut list_position = String::from("left");
@@ -133,8 +133,8 @@ impl Config {
                 vim_motion = v;
             }
 
-            if let Some(v) = value.get("enable_mouse_support").and_then(|v| v.as_bool()) {
-                enable_mouse_support = v;
+            if let Some(v) = value.get("mouse_support").and_then(|v| v.as_bool()) {
+                mouse_support = v;
             }
 
             if let Some(v) = value.get("list_position").and_then(|v| v.as_str()) {
@@ -272,7 +272,7 @@ impl Config {
             wallpaper_dir,
             session,
             vim_motion,
-            enable_mouse_support,
+            mouse_support,
             image_cache_size,
             keybindings,
             tabs,

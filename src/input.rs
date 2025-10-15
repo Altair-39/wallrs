@@ -3,7 +3,7 @@ use crate::persistence::save_list;
 use crate::tui::Tab;
 use crossterm::event::{DisableMouseCapture, KeyCode};
 use crossterm::execute;
-use crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode};
+use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
 use ratatui::widgets::ListState;
 use std::io;
 use std::path::PathBuf;
@@ -19,7 +19,7 @@ pub struct Input<'a> {
     pub history: &'a mut Vec<PathBuf>,
     pub favorites: &'a mut Vec<PathBuf>,
     pub vim_motion: bool,
-    pub enable_mouse_support: bool,
+    pub mouse_support: bool,
     pub keybindings: &'a CustomKeybindings,
     pub active_tabs: &'a [Tab],
 }
@@ -40,7 +40,7 @@ pub fn handle_input(
         history,
         favorites,
         vim_motion,
-        enable_mouse_support,
+        mouse_support,
         keybindings,
         active_tabs,
     } = input;
@@ -176,7 +176,7 @@ pub fn handle_input(
                     selected_items.push(*selected);
                 }
             } else {
-                *selected += filtered.len();
+                *selected += 1;
                 list_state.select(Some(*selected));
                 if *multi_select && !selected_items.contains(selected) {
                     selected_items.push(*selected);
@@ -190,23 +190,11 @@ pub fn handle_input(
                 if *multi_select && !selected_items.contains(selected) {
                     selected_items.push(*selected);
                 }
-            } else {
-                *selected += filtered.len();
-                list_state.select(Some(*selected));
-                if *multi_select && !selected_items.contains(selected) {
-                    selected_items.push(*selected);
-                }
             }
         }
         KeyCode::Char('k') if *vim_motion => {
             if *selected > 0 {
                 *selected -= 1;
-                list_state.select(Some(*selected));
-                if *multi_select && !selected_items.contains(selected) {
-                    selected_items.push(*selected);
-                }
-            } else {
-                *selected += filtered.len();
                 list_state.select(Some(*selected));
                 if *multi_select && !selected_items.contains(selected) {
                     selected_items.push(*selected);
@@ -249,7 +237,7 @@ pub fn handle_input(
 
         // Quit
         KeyCode::Esc if !*in_search => {
-            if *enable_mouse_support {
+            if *mouse_support {
                 execute!(io::stdout(), DisableMouseCapture).ok();
             }
             disable_raw_mode().unwrap();

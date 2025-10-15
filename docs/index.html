@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>App Documentation - Terminal Interface</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="terminal">
+      <div class="terminal-header">
+        <div class="terminal-title">wallrs-docs@terminal:~</div>
+        <div class="terminal-controls">
+          <div class="control close"></div>
+          <div class="control minimize"></div>
+          <div class="control maximize"></div>
+        </div>
+      </div>
+      <div class="terminal-body" id="terminalBody">
+        <div class="output">Welcome to Wallrs v0.1.7</div>
+        <div class="output">
+          Type 'help' for available commands or use the navigation menu
+        </div>
+        <div class="output"></div>
+
+        <div class="nav-menu">
+          <div class="nav-item active" data-section="welcome">Welcome</div>
+          <div class="nav-item" data-section="commands">Commands</div>
+          <div class="nav-item" data-section="config">Configuration</div>
+          <div class="nav-item" data-section="keybindings">Keybindings</div>
+          <div class="nav-item" data-section="demo">Demo</div>
+          <div class="nav-item" data-section="friendly">Friendly Projects</div>
+        </div>
+
+        <!-- Welcome Section -->
+        <div id="welcome-section" class="section">
+          <div class="output">
+            <span class="prompt-user">user@docs</span
+            ><span class="prompt-symbol">:~$</span>
+            <span class="command">cat welcome.txt</span>
+          </div>
+          <div class="output">=========================================</div>
+          <div class="output">WALLRS DOCUMENTATION</div>
+          <div class="output">=========================================</div>
+          <div class="output">
+            This terminal interface provides documentation for wallrs.
+          </div>
+          <div class="output">
+            Use the navigation menu above or type commands to explore.
+          </div>
+          <div class="output">Available sections:</div>
+          <div class="output">
+            - <span class="directory">commands</span>: Available terminal
+            commands
+          </div>
+
+          <div class="output">
+            - <span class="directory">config</span>: Application configuration
+            options
+          </div>
+          <div class="output">
+            - <span class="directory">demo</span>: Demonstration of features
+          </div>
+          <div class="output">
+            - <span class="directory">friendly projects</span>: Projects that
+            are inspired or use wallrs
+          </div>
+
+          <div class="output">
+            - <span class="directory">keybindings</span>: Keybindings
+            configuration options
+          </div>
+        </div>
+
+        <!-- Configuration Section -->
+        <div id="config-section" class="section hidden">
+          <div class="section-title">CONFIGURATION OPTIONS</div>
+
+          <div class="output">
+            <span class="prompt-user">user@docs</span
+            ><span class="prompt-symbol">:~$</span>
+            <span class="command">config --list</span>
+          </div>
+
+          <div class="config-option">
+            <div class="config-name">wallpaper_dir</div>
+            <div class="config-desc">The directory for the wallpapers.</div>
+          </div>
+
+          <div class="config-option">
+            <div class="config-name">vim_motion</div>
+            <div class="config-desc">
+              Enable vim motion (hjkl) for navigation.<br />
+              <span class="file">Example: vim_motion = true</span>
+            </div>
+          </div>
+
+          <div class="config-option">
+            <div class="config-name">mouse_support</div>
+            <div class="config-desc">
+              Enable mouse support for navigation.<br />
+              <span class="file">Example: mouse_support = true</span>
+            </div>
+          </div>
+
+          <div class="config-option">
+            <div class="config-name">list_position</div>
+            <div class="config-desc">
+              Position of list and wallpapers preview.<br />
+              <span class="file">Options: top, bottom, left, right</span><br />
+              <span class="file">Example: list_position = "top"</span>
+            </div>
+          </div>
+
+          <div class="config-option">
+            <div class="config-name">pywal</div>
+            <div class="config-desc">
+              Enable pywal integration.<br />
+              <span class="file">Example: pywal = true</span>
+            </div>
+          </div>
+
+          <div class="config-option">
+            <div class="config-name">hellwal</div>
+            <div class="config-desc">
+              Enable hellwal integration.<br />
+              <span class="file">Example: hellwal = true</span>
+            </div>
+          </div>
+
+          <div class="config-option">
+            <div class="config-name">image_cache_size</div>
+            <div class="config-desc">The dimension of the caching image.</div>
+          </div>
+
+          <div class="config-option">
+            <div class="config-name">[[tabs]]</div>
+            <div class="config-desc">
+              Tag that let you set the order and which tables are visible.
+            </div>
+          </div>
+
+          <div class="output"></div>
+          <div class="output">Example configuration file (config.toml):</div>
+          <div class="code-block">
+            <!-- prettier-ignore -->
+            <pre>wallpaper_dir = "~/Pictures/wallpapers"
+vim_motion = true
+mouse_support = true
+list_position = "top"
+pywal = true
+hellwal = false
+image_cache_size = 100
+
+[[tabs]]
+name = "Wallpapers"
+enabled = true
+
+[[tabs]]
+name = "Favorites"
+enabled = true
+
+[[tabs]]
+name = "History"
+enabled = true</pre>
+          </div>
+        </div>
+
+        <!-- Keybindings Section -->
+        <div id="keybindings-section" class="section hidden">
+          <div class="section-title">KEYBINDINGS</div>
+
+          <div class="output">
+            <span class="prompt-user">user@docs</span
+            ><span class="prompt-symbol">:~$</span>
+            <span class="command">keybindings --list</span>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys"><kbd>j</kbd> / <kbd>↓</kbd></div>
+            <div class="keybinding-desc">Move selection down</div>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys"><kbd>k</kbd> / <kbd>↑</kbd></div>
+            <div class="keybinding-desc">Move selection up</div>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys"><kbd>h</kbd> / <kbd>←</kbd></div>
+            <div class="keybinding-desc">Move selection left</div>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys"><kbd>l</kbd> / <kbd>→</kbd></div>
+            <div class="keybinding-desc">Move selection right</div>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys">
+              <kbd>Enter</kbd>
+            </div>
+            <div class="keybinding-desc">Select/apply wallpaper</div>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys">
+              <kbd>f</kbd>
+            </div>
+            <div class="keybinding-desc">
+              Toggle favorite <span class="file">(customizable)</span>
+            </div>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys">
+              <kbd>v</kbd>
+            </div>
+            <div class="keybinding-desc">
+              Enter visual mode <span class="file">(customizable)</span>
+            </div>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys">
+              <kbd>/</kbd>
+            </div>
+            <div class="keybinding-desc">
+              Search wallpapers <span class="file">(customizable)</span>
+            </div>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys">
+              <kbd>Esc</kbd>
+            </div>
+            <div class="keybinding-desc">Quit application</div>
+          </div>
+
+          <div class="output"></div>
+          <div class="output">Mouse bindings (if enabled):</div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys">
+              <kbd>Click</kbd>
+            </div>
+            <div class="keybinding-desc">Select item</div>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys">
+              <kbd>Scroll</kbd>
+            </div>
+            <div class="keybinding-desc">Navigate list</div>
+          </div>
+
+          <div class="output"></div>
+          <div class="output">Customization:</div>
+          <div class="output">
+            Keybindings for favorite, search, and visual mode can be customized
+            in your <span class="file">config.toml</span>:
+          </div>
+
+          <div class="code-block">
+            <!-- prettier-ignore -->
+            <pre>[keybindings]
+favorite = "f"      # Change favorite keybinding
+search = "/"        # Change search keybinding  
+multi_select = "v"   # Change visual mode keybinding</pre>
+          </div>
+        </div>
+
+        <!-- Demo Section -->
+        <div id="demo-section" class="section hidden">
+          <div class="section-title">DEMO</div>
+
+          <div class="output">
+            <span class="prompt-user">user@docs</span
+            ><span class="prompt-symbol">:~$</span>
+            <span class="command">demo --start</span>
+          </div>
+
+          <div class="demo-container">
+            <div class="demo-controls">
+              <button class="demo-btn" id="demo-feature1">Basic Usage</button>
+              <button class="demo-btn" id="demo-reset">Reset Demo</button>
+            </div>
+
+            <div class="demo-output" id="demo-output">
+              Select a demo above to see Wallrs in action!
+            </div>
+
+            <!-- Video Demo Area -->
+            <div class="video-container">
+              <div class="video-placeholder" id="video-placeholder">
+                <div class="video-message">
+                  🎥 Select a demo above to see Wallrs in action!
+                </div>
+              </div>
+
+              <video
+                id="demo-video1"
+                class="demo-video hidden"
+                controls
+                width="100%"
+              >
+                <source src="videos/1.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          </div>
+        </div>
+        <!-- Friendly Projects Section -->
+        <div id="friendly-section" class="section hidden">
+          <div class="section-title">FRIENDLY PROJECTS</div>
+
+          <div class="output">
+            <span class="prompt-user">user@docs</span
+            ><span class="prompt-symbol">:~$</span>
+            <span class="command">projects --list</span>
+          </div>
+
+          <div class="output">Projects that use or are inspired by Wallrs:</div>
+
+          <div class="project-option">
+            <div class="project-avatar">
+              <img
+                src="https://github.com/federicotorrielli.png"
+                alt="federicotorrielli"
+                class="github-avatar"
+              />
+            </div>
+            <div class="project-info">
+              <div class="project-name">
+                <span class="directory">wallhaven</span>
+              </div>
+              <div class="project-desc">
+                A simple script for downloading and setting wallpapers from
+                Wallhaven using their API (Linux only). <br />
+                <span class="file">GitHub: </span>
+                <a
+                  href="https://github.com/federicotorrielli/wallhaven"
+                  class="github-link"
+                  target="_blank"
+                >
+                  federicotorrielli/wallhaven
+                </a>
+              </div>
+            </div>
+          </div>
+          <div class="output"></div>
+          <div class="output">Want to add your project?</div>
+          <div class="output">
+            Submit a pull request or open an issue on the
+            <a
+              href="https://github.com/yourusername/wallrs"
+              class="file"
+              target="_blank"
+              >Wallrs GitHub repository</a
+            >
+            to add your project to this list!
+          </div>
+          <div class="output"></div>
+        </div>
+
+        <!-- Commands Section -->
+        <div id="commands-section" class="section hidden">
+          <div class="section-title">TERMINAL COMMANDS</div>
+
+          <div class="output">
+            <span class="prompt-user">user@docs</span
+            ><span class="prompt-symbol">:~$</span>
+            <span class="command">help</span>
+          </div>
+
+          <div class="output">Available commands:</div>
+          <div class="output">help - Show this help message</div>
+          <div class="output">clear - Clear the terminal</div>
+          <div class="output">config - Show configuration options</div>
+          <div class="output">demo - Start interactive demo</div>
+          <div class="output">about - About this documentation</div>
+          <div class="output">date - Show current date and time</div>
+          <div class="output">exit - Close the terminal (not really)</div>
+        </div>
+
+        <div class="input-line">
+          <span class="prompt-user">user@docs</span
+          ><span class="prompt-symbol">:~$</span>
+          <input type="text" id="commandInput" autofocus />
+          <span class="cursor"></span>
+        </div>
+      </div>
+    </div>
+    <script src="script.js"></script>
+  </body>
+</html>

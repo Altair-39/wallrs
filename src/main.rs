@@ -9,10 +9,13 @@ mod wallpapers;
 use apply::apply_wallpaper;
 use clap::Parser;
 use config::Config;
+use crossterm::execute;
+use crossterm::terminal::enable_raw_mode;
+use crossterm::terminal::EnterAlternateScreen;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use tui::run_tui;
 use wallpapers::load_wallpapers;
 
 #[derive(Parser, Debug)]
@@ -68,43 +71,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Run TUI to select a wallpaper
-    let selected_wallpaper = run_tui(&wallpapers, &cfg).await?;
+    enable_raw_mode()?;
 
-    if args.print {
-        if cfg.pywal {
-            Command::new("wal")
-                .args([
-                    "-i",
-                    selected_wallpaper.to_str().unwrap(),
-                    "-n",
-                    "--backend",
-                    "wal",
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()?;
+    execute!(io::stdout(), EnterAlternateScreen)?;
+    let mut tui = tui::TuiApp::new(&wallpapers, &cfg)?;
+    loop {
+        // Run TUI to select a wallpaper
+        let selected_wallpaper = tui.run().await?;
+        if args.print {
+            if cfg.pywal {
+                Command::new("wal")
+                    .args([
+                        "-i",
+                        selected_wallpaper.to_str().unwrap(),
+                        "-n",
+                        "--backend",
+                        "wal",
+                    ])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()?;
+            }
+            // Save selected wallpaper to cache as current.<ext>
+            let cache_dir: PathBuf = dirs::cache_dir()
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+                .join("wallrs");
+            fs::create_dir_all(&cache_dir)?;
+
+            let ext = selected_wallpaper
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("png");
+            let cache_file = cache_dir.join(format!("current.{}", ext));
+
+            fs::copy(&selected_wallpaper, &cache_file)?;
+            Command::new("pkill").args(["-USR2", "waybar"]).status()?;
+        } else {
+            // Apply wallpaper normally
+            apply_wallpaper(&selected_wallpaper, &cfg)?;
         }
-        // Save selected wallpaper to cache as current.<ext>
-        let cache_dir: PathBuf = dirs::cache_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join("wallrs");
-        fs::create_dir_all(&cache_dir)?;
-
-        let ext = selected_wallpaper
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("png");
-        let cache_file = cache_dir.join(format!("current.{}", ext));
-
-        fs::copy(&selected_wallpaper, &cache_file)?;
-        Command::new("pkill").args(["-USR2", "waybar"]).status()?;
-
-        println!("Saved selection to {}", cache_file.display());
-    } else {
-        // Apply wallpaper normally
-        apply_wallpaper(&selected_wallpaper, &cfg)?;
     }
-
-    Ok(())
 }
