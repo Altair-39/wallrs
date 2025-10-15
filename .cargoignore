@@ -1,2 +1,9 @@
-assets/
-docs/
+# Exclude large video files but keep other assets/docs
+assets/demo.mp4
+docs/videos/
+
+# Keep these patterns for safety
+target/
+*.mp4
+*.mov
+*.avi
