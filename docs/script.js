@@ -262,7 +262,7 @@ Commands demonstrated:<br>
         break;
 
       case "about":
-        addTextOutput("Wallrs Documentation Terminal v0.1.7");
+        addTextOutput("Wallrs Documentation Terminal v0.1.8");
         addTextOutput(
           "A TUI app for changing the wallpaper on both x11 and wayland-.",
         );
