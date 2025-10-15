@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>App Documentation - Terminal Interface</title>
+    <title>Wallrs Documentation</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -144,12 +144,19 @@
           <div class="output">Example configuration file (config.toml):</div>
           <div class="code-block">
             <!-- prettier-ignore -->
-            <pre>wallpaper_dir = "~/Pictures/wallpapers"
+            <pre>
+wallpaper_dir = "~/Pictures/wallpapers"
+
 vim_motion = true
+
 mouse_support = true
+
 list_position = "top"
+
 pywal = true
+
 hellwal = false
+
 image_cache_size = 100
 
 [[tabs]]
@@ -232,6 +239,15 @@ enabled = true</pre>
 
           <div class="keybinding-option">
             <div class="keybinding-keys">
+              <kbd>r</kbd>
+            </div>
+            <div class="keybinding-desc">
+              Rename a wallpaper <span class="file">(customizable)</span>
+            </div>
+          </div>
+
+          <div class="keybinding-option">
+            <div class="keybinding-keys">
               <kbd>Esc</kbd>
             </div>
             <div class="keybinding-desc">Quit application</div>
@@ -257,16 +273,21 @@ enabled = true</pre>
           <div class="output"></div>
           <div class="output">Customization:</div>
           <div class="output">
-            Keybindings for favorite, search, and visual mode can be customized
-            in your <span class="file">config.toml</span>:
+            Keybindings for favorite, search, visual and rename mode can be
+            customized in your <span class="file">keybindings.toml</span>:
           </div>
 
           <div class="code-block">
             <!-- prettier-ignore -->
-            <pre>[keybindings]
+            <pre>
 favorite = "f"      # Change favorite keybinding
+
 search = "/"        # Change search keybinding  
-multi_select = "v"   # Change visual mode keybinding</pre>
+
+multi_select = "v"  # Change visual mode keybinding
+
+rename = "r"        # Change in rename mode keybinding
+            </pre>
           </div>
         </div>
 
@@ -283,6 +304,9 @@ multi_select = "v"   # Change visual mode keybinding</pre>
           <div class="demo-container">
             <div class="demo-controls">
               <button class="demo-btn" id="demo-feature1">Basic Usage</button>
+              <button class="demo-btn" id="demo-feature2">
+                Renaming Wallpapers
+              </button>
               <button class="demo-btn" id="demo-reset">Reset Demo</button>
             </div>
 
@@ -305,6 +329,15 @@ multi_select = "v"   # Change visual mode keybinding</pre>
                 width="100%"
               >
                 <source src="videos/1.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+              <video
+                id="demo-video2"
+                class="demo-video hidden"
+                controls
+                width="100%"
+              >
+                <source src="videos/2.mp4" type="video/mp4" />
                 Your browser does not support the video tag.
               </video>
             </div>
@@ -383,7 +416,6 @@ multi_select = "v"   # Change visual mode keybinding</pre>
           <div class="output">date - Show current date and time</div>
           <div class="output">exit - Close the terminal (not really)</div>
         </div>
-
         <div class="input-line">
           <span class="prompt-user">user@docs</span
           ><span class="prompt-symbol">:~$</span>

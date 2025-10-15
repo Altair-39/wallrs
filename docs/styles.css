@@ -98,6 +98,9 @@ body {
   display: flex;
   align-items: center;
   margin-top: 10px;
+  border-top: 1px solid #f7a8b8;
+  padding-top: 15px;
+  margin-top: 20px;
 }
 
 .cursor {
@@ -157,7 +160,13 @@ input {
   border-bottom: 1px solid #f7a8b8; /* Light pink */
   padding-bottom: 5px;
 }
+.section {
+  scroll-margin-top: 0;
+}
 
+.terminal-body {
+  scroll-behavior: auto;
+}
 .config-option {
   margin: 8px 0;
   display: flex;

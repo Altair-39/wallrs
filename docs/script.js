@@ -18,6 +18,7 @@ document.addEventListener("DOMContentLoaded", function () {
     "date",
     "echo",
     "exit",
+    "friends",
     "friendly",
     "projects",
   ];
@@ -72,6 +73,35 @@ Commands demonstrated:<br>
 
       // Show and play the specific video
       const demoVideo = document.getElementById("demo-video1");
+      demoVideo.classList.remove("hidden");
+      demoVideo.currentTime = 0; // Reset to start
+      demoVideo.play().catch((e) => console.log("Autoplay prevented:", e));
+    });
+  document
+    .getElementById("demo-feature2")
+    .addEventListener("click", function () {
+      const demoOutput = document.getElementById("demo-output");
+      const videoPlaceholder = document.getElementById("video-placeholder");
+      const allVideos = document.querySelectorAll(".demo-video");
+
+      demoOutput.innerHTML = `
+<span class="success">Renaming Wallpapers Demo</span><br>
+Showing how to use Wallrs to rename your wallpapers...<br>
+<br>
+Commands demonstrated:<br>
+- wallrs --path ~/Pictures/wallpapers<br>
+<span class="success">✓ Renaming functionality demonstrated</span>
+    `;
+
+      // Hide all videos and placeholder, show specific video
+      videoPlaceholder.classList.add("hidden");
+      allVideos.forEach((video) => {
+        video.classList.add("hidden");
+        video.pause(); // Pause all videos
+      });
+
+      // Show and play the specific video
+      const demoVideo = document.getElementById("demo-video2");
       demoVideo.classList.remove("hidden");
       demoVideo.currentTime = 0; // Reset to start
       demoVideo.play().catch((e) => console.log("Autoplay prevented:", e));
@@ -189,75 +219,107 @@ Commands demonstrated:<br>
   function processCommand(command) {
     const cmd = command.toLowerCase();
 
-    if (cmd === "help") {
-      // Navigate to commands section
-      navItems.forEach((nav) => nav.classList.remove("active"));
-      document
-        .querySelector('[data-section="commands"]')
-        .classList.add("active");
-      sections.forEach((section) => section.classList.add("hidden"));
-      document.getElementById("commands-section").classList.remove("hidden");
-    } else if (cmd === "clear") {
-      // Remove all output elements except the last one (input line)
-      const outputs = terminalBody.querySelectorAll(".output");
-      outputs.forEach((output) => {
-        if (
-          output.parentNode === terminalBody &&
-          output !== commandInput.parentNode
-        ) {
-          terminalBody.removeChild(output);
+    switch (cmd) {
+      case "help":
+        // Navigate to commands section
+        navItems.forEach((nav) => nav.classList.remove("active"));
+        document
+          .querySelector('[data-section="commands"]')
+          .classList.add("active");
+        sections.forEach((section) => section.classList.add("hidden"));
+        document.getElementById("commands-section").classList.remove("hidden");
+        break;
+
+      case "clear":
+        // Remove all output elements except the last one (input line)
+        const outputs = terminalBody.querySelectorAll(".output");
+        outputs.forEach((output) => {
+          if (
+            output.parentNode === terminalBody &&
+            output !== commandInput.parentNode
+          ) {
+            terminalBody.removeChild(output);
+          }
+        });
+        break;
+
+      case "config":
+        // Navigate to config section
+        navItems.forEach((nav) => nav.classList.remove("active"));
+        document
+          .querySelector('[data-section="config"]')
+          .classList.add("active");
+        sections.forEach((section) => section.classList.add("hidden"));
+        document.getElementById("config-section").classList.remove("hidden");
+        break;
+
+      case "demo":
+        // Navigate to demo section
+        navItems.forEach((nav) => nav.classList.remove("active"));
+        document.querySelector('[data-section="demo"]').classList.add("active");
+        sections.forEach((section) => section.classList.add("hidden"));
+        document.getElementById("demo-section").classList.remove("hidden");
+        break;
+
+      case "about":
+        addTextOutput("Wallrs Documentation Terminal v0.1.7");
+        addTextOutput(
+          "A TUI app for changing the wallpaper on both x11 and wayland-.",
+        );
+        addTextOutput("🏳️‍⚧️ Built with Rust 🏳️‍⚧️ ");
+        break;
+
+      case "date":
+        const now = new Date();
+        addTextOutput(now.toString());
+        break;
+
+      case "exit":
+        addTextOutput("This terminal cannot be closed from here.", "error");
+        addTextOutput(
+          "Use the close button in the title bar or close the browser tab.",
+        );
+        break;
+
+      case "keybindings":
+      case "keys":
+      case "bindings":
+        // Navigate to keybindings section
+        navItems.forEach((nav) => nav.classList.remove("active"));
+        document
+          .querySelector('[data-section="keybindings"]')
+          .classList.add("active");
+        sections.forEach((section) => section.classList.add("hidden"));
+        document
+          .getElementById("keybindings-section")
+          .classList.remove("hidden");
+        break;
+
+      case "projects":
+      case "friendly":
+      case "friends":
+        // Navigate to friendly projects section
+        navItems.forEach((nav) => nav.classList.remove("active"));
+        document
+          .querySelector('[data-section="friendly"]')
+          .classList.add("active");
+        sections.forEach((section) => section.classList.add("hidden"));
+        document.getElementById("friendly-section").classList.remove("hidden");
+        break;
+
+      case "":
+        // Do nothing for empty command
+        break;
+
+      default:
+        if (cmd.startsWith("echo ")) {
+          const text = command.substring(5);
+          addTextOutput(text);
+        } else {
+          addTextOutput(`Command not found: ${command}`, "error");
+          addTextOutput('Type "help" for available commands');
         }
-      });
-    } else if (cmd === "config") {
-      // Navigate to config section
-      navItems.forEach((nav) => nav.classList.remove("active"));
-      document.querySelector('[data-section="config"]').classList.add("active");
-      sections.forEach((section) => section.classList.add("hidden"));
-      document.getElementById("config-section").classList.remove("hidden");
-    } else if (cmd === "demo") {
-      // Navigate to demo section
-      navItems.forEach((nav) => nav.classList.remove("active"));
-      document.querySelector('[data-section="demo"]').classList.add("active");
-      sections.forEach((section) => section.classList.add("hidden"));
-      document.getElementById("demo-section").classList.remove("hidden");
-    } else if (cmd === "about") {
-      addTextOutput("Wallrs Documentation Terminal v0.1.7");
-      addTextOutput(
-        "A TUI app for changing the wallpaper on both x11 and wayland-.",
-      );
-      addTextOutput("🏳️‍⚧️ Built with Rust 🏳️‍⚧️ ");
-    } else if (cmd === "date") {
-      const now = new Date();
-      addTextOutput(now.toString());
-    } else if (cmd.startsWith("echo ")) {
-      const text = command.substring(5);
-      addTextOutput(text);
-    } else if (cmd === "exit") {
-      addTextOutput("This terminal cannot be closed from here.", "error");
-      addTextOutput(
-        "Use the close button in the title bar or close the browser tab.",
-      );
-    } else if (cmd === "keybindings" || cmd === "keys" || cmd === "bindings") {
-      // Navigate to keybindings section
-      navItems.forEach((nav) => nav.classList.remove("active"));
-      document
-        .querySelector('[data-section="keybindings"]')
-        .classList.add("active");
-      sections.forEach((section) => section.classList.add("hidden"));
-      document.getElementById("keybindings-section").classList.remove("hidden");
-    } else if (cmd === "projects" || cmd === "friendly" || cmd === "friends") {
-      // Navigate to friendly projects section
-      navItems.forEach((nav) => nav.classList.remove("active"));
-      document
-        .querySelector('[data-section="friendly"]')
-        .classList.add("active");
-      sections.forEach((section) => section.classList.add("hidden"));
-      document.getElementById("friendly-section").classList.remove("hidden");
-    } else if (cmd === "") {
-      // Do nothing for empty command
-    } else {
-      addTextOutput(`Command not found: ${command}`, "error");
-      addTextOutput('Type "help" for available commands');
+        break;
     }
   }
 });
