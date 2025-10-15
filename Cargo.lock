@@ -1857,7 +1857,7 @@ dependencies = [
 
 [[package]]
 name = "wallrs"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "clap",
  "crossterm 0.29.0",
