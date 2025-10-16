@@ -106,6 +106,35 @@ Commands demonstrated:<br>
       demoVideo.currentTime = 0; // Reset to start
       demoVideo.play().catch((e) => console.log("Autoplay prevented:", e));
     });
+  document
+    .getElementById("demo-feature3")
+    .addEventListener("click", function () {
+      const demoOutput = document.getElementById("demo-output");
+      const videoPlaceholder = document.getElementById("video-placeholder");
+      const allVideos = document.querySelectorAll(".demo-video");
+
+      demoOutput.innerHTML = `
+<span class="success">Video Wallpapers Demo</span><br>
+Showing how to use Wallrs to set a video as your wallpapers...<br>
+<br>
+Commands demonstrated:<br>
+- wallrs --path ~/Pictures/wallpapers<br>
+<span class="success">✓ Video functionality demonstrated</span>
+    `;
+
+      // Hide all videos and placeholder, show specific video
+      videoPlaceholder.classList.add("hidden");
+      allVideos.forEach((video) => {
+        video.classList.add("hidden");
+        video.pause(); // Pause all videos
+      });
+
+      // Show and play the specific video
+      const demoVideo = document.getElementById("demo-video3");
+      demoVideo.classList.remove("hidden");
+      demoVideo.currentTime = 0; // Reset to start
+      demoVideo.play().catch((e) => console.log("Autoplay prevented:", e));
+    });
 
   document.getElementById("demo-reset").addEventListener("click", function () {
     const demoOutput = document.getElementById("demo-output");
@@ -262,7 +291,7 @@ Commands demonstrated:<br>
         break;
 
       case "about":
-        addTextOutput("Wallrs Documentation Terminal v0.1.8");
+        addTextOutput("Wallrs Documentation Terminal v0.1.9");
         addTextOutput(
           "A TUI app for changing the wallpaper on both x11 and wayland-.",
         );

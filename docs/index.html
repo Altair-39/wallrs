@@ -17,7 +17,7 @@
         </div>
       </div>
       <div class="terminal-body" id="terminalBody">
-        <div class="output">Welcome to Wallrs v0.1.8</div>
+        <div class="output">Welcome to Wallrs v0.1.9</div>
         <div class="output">
           Type 'help' for available commands or use the navigation menu
         </div>
@@ -129,6 +129,15 @@
           </div>
 
           <div class="config-option">
+            <div class="config-name">video</div>
+            <div class="config-desc">
+              Enable mpvpaper integration (IMPORTANT: turn on only for mp4
+              videos).<br />
+              <span class="file">Example: video = true</span>
+            </div>
+          </div>
+
+          <div class="config-option">
             <div class="config-name">image_cache_size</div>
             <div class="config-desc">The dimension of the caching image.</div>
           </div>
@@ -156,6 +165,8 @@ list_position = "top"
 pywal = true
 
 hellwal = false
+
+video = false
 
 image_cache_size = 100
 
@@ -307,6 +318,10 @@ rename = "r"        # Change in rename mode keybinding
               <button class="demo-btn" id="demo-feature2">
                 Renaming Wallpapers
               </button>
+              <button class="demo-btn" id="demo-feature3">
+                Video Wallpapers
+              </button>
+
               <button class="demo-btn" id="demo-reset">Reset Demo</button>
             </div>
 
@@ -338,6 +353,15 @@ rename = "r"        # Change in rename mode keybinding
                 width="100%"
               >
                 <source src="videos/2.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+              <video
+                id="demo-video3"
+                class="demo-video hidden"
+                controls
+                width="100%"
+              >
+                <source src="videos/3.mp4" type="video/mp4" />
                 Your browser does not support the video tag.
               </video>
             </div>
