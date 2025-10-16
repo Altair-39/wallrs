@@ -24,6 +24,7 @@ pub struct Config {
     pub transition_type: String,
     pub pywal: bool,
     pub hellwal: bool,
+    pub mpvpaper: bool,
     pub commands: CommandConfig,
 }
 
@@ -38,6 +39,7 @@ pub struct CommandConfig {
     pub wal: Vec<String>,
     pub swww: Vec<String>,
     pub feh: Vec<String>,
+    pub mpvpaper: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -95,6 +97,7 @@ impl Config {
 
         let mut pywal = false;
         let mut hellwal = false;
+        let mut mpvpaper = false;
         // Default command arguments
         let default_commands = CommandConfig {
             wal: vec![
@@ -113,6 +116,14 @@ impl Config {
                 "{transition}".into(),
             ],
             feh: vec!["--bg-scale".into(), "{path}".into()],
+            mpvpaper: vec![
+                "-vs".into(),
+                "-o".into(),
+                "no-audio loop".into(),
+                "--fork".into(),
+                "eDP-1".into(),
+                "{path}".into(),
+            ],
         };
         let mut commands = default_commands.clone();
 
@@ -159,6 +170,10 @@ impl Config {
             if let Some(v) = value.get("hellwal").and_then(|v| v.as_bool()) {
                 hellwal = v;
             }
+            if let Some(v) = value.get("video").and_then(|v| v.as_bool()) {
+                mpvpaper = v;
+            }
+
             if let Some(v) = value.get("image_cache_size").and_then(|v| v.as_integer()) {
                 image_cache_size = Some(v as usize);
             }
@@ -206,6 +221,10 @@ impl Config {
                 commands.feh = merge(
                     &default_commands.feh,
                     cmds.get("feh").and_then(|v| v.as_array()),
+                );
+                commands.mpvpaper = merge(
+                    &default_commands.mpvpaper,
+                    cmds.get("mpvpaper").and_then(|v| v.as_array()),
                 );
             }
 
@@ -289,6 +308,7 @@ impl Config {
             pywal,
             hellwal,
             commands,
+            mpvpaper,
         }
     }
 }

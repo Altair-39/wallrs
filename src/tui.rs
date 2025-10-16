@@ -19,31 +19,15 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use strum_macros::Display;
+use tempfile::NamedTempFile;
 use tokio::sync::mpsc;
-
 // ---------------------------
 // Image Cache
 // ---------------------------
-
-#[derive(Clone)]
-struct CachedImage {
-    image: Arc<DynamicImage>,
-}
-
-impl CachedImage {
-    fn new(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let image = image::ImageReader::open(path)?
-            .with_guessed_format()?
-            .decode()?;
-        Ok(Self {
-            image: Arc::new(image),
-        })
-    }
-}
-
 struct ImageCache {
     cache: HashMap<PathBuf, CachedImage>,
     max_size: usize,
@@ -72,7 +56,85 @@ impl ImageCache {
         self.cache.insert(path, image);
     }
 }
+#[derive(Clone)]
+struct CachedImage {
+    image: Arc<DynamicImage>,
+    is_video: bool,
+}
 
+impl CachedImage {
+    fn new(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let extension = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        let image = if ["mp4", "avi", "mov", "mkv", "webm"].contains(&extension.as_str()) {
+            // Extract thumbnail from video
+            Self::extract_video_thumbnail(path)?
+        } else {
+            // Load regular image
+            image::ImageReader::open(path)?
+                .with_guessed_format()?
+                .decode()?
+        };
+
+        Ok(Self {
+            image: Arc::new(image),
+            is_video: ["mp4", "avi", "mov", "mkv", "webm"].contains(&extension.as_str()),
+        })
+    }
+
+    fn extract_video_thumbnail(
+        path: &PathBuf,
+    ) -> Result<DynamicImage, Box<dyn std::error::Error + Send + Sync>> {
+        // Create a temporary file for the thumbnail
+        let temp_file = NamedTempFile::new()?;
+        let temp_path = temp_file.path().with_extension("jpg");
+
+        // Use ffmpeg to extract a frame from the video (at 1 second)
+        let output = Command::new("ffmpeg")
+            .args([
+                "-i",
+                path.to_str().unwrap(),
+                "-ss",
+                "00:00:01", // Seek to 1 second
+                "-vframes",
+                "1", // Extract 1 frame
+                "-q:v",
+                "2", // High quality
+                temp_path.to_str().unwrap(),
+                "-y", // Overwrite output file
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            return Err(
+                format!("FFmpeg failed: {}", String::from_utf8_lossy(&output.stderr)).into(),
+            );
+        }
+
+        // Load the extracted frame as an image
+        let image = image::open(&temp_path)?;
+
+        // Clean up the temporary file (ignore errors)
+        let _ = std::fs::remove_file(&temp_path);
+
+        Ok(image)
+    }
+
+    fn create_video_placeholder() -> DynamicImage {
+        // Create a placeholder image for videos when thumbnail extraction fails
+        DynamicImage::ImageRgba8(image::RgbaImage::from_fn(100, 100, |x, y| {
+            if (x / 10 + y / 10) % 2 == 0 {
+                image::Rgba([70, 70, 70, 255]) // Dark gray
+            } else {
+                image::Rgba([50, 50, 50, 255]) // Darker gray
+            }
+        }))
+    }
+}
 // ---------------------------
 // Tab Enum
 // ---------------------------
@@ -253,15 +315,38 @@ impl<'a> TuiApp<'a> {
     fn request_preview(&self, path: PathBuf) {
         let tx = self.preview_tx.clone();
         let path_clone = path.clone();
+
         tokio::spawn(async move {
-            let result = tokio::task::spawn_blocking(move || CachedImage::new(&path_clone))
-                .await
-                .unwrap_or_else(|e| Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>));
+            let result = tokio::task::spawn_blocking(move || {
+                let extension = path_clone
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+
+                // Check if it's a video file
+                if ["mp4", "avi", "mov", "mkv", "webm"].contains(&extension.as_str()) {
+                    match CachedImage::new(&path_clone) {
+                        Ok(cached_image) => Ok(cached_image),
+                        Err(_) => {
+                            // Fallback to video placeholder if extraction fails
+                            Ok(CachedImage {
+                                image: Arc::new(CachedImage::create_video_placeholder()),
+                                is_video: true,
+                            })
+                        }
+                    }
+                } else {
+                    // Regular image file
+                    CachedImage::new(&path_clone)
+                }
+            })
+            .await
+            .unwrap_or_else(|e| Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>));
 
             let _ = tx.send((path, result)).await;
         });
     }
-
     // --------------------
     // Tab management
     // --------------------
@@ -423,11 +508,21 @@ impl<'a> TuiApp<'a> {
         };
 
         // List items
+
         let items: Vec<ListItem> = filtered
             .iter()
             .enumerate()
             .map(|(i, p)| {
                 let mut name = p.file_name().unwrap().to_string_lossy().to_string();
+
+                let extension = p
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if ["mp4", "avi", "mov", "mkv"].contains(&extension.as_str()) {
+                    name.push_str(" 🎥");
+                }
 
                 if self.favorites.contains(p) {
                     name.push_str(" ★");
@@ -534,9 +629,30 @@ impl<'a> TuiApp<'a> {
             );
 
             // Preview
+
             if let Some(state) = &mut self.preview_state {
                 let widget = StatefulImage::new();
                 f.render_stateful_widget(widget.resize(Resize::Fit(None)), preview_area, state);
+
+                // Overlay video indicator if this is a video
+                if let Some(current_path) = self.last_preview.as_ref() {
+                    let extension = current_path
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    if ["mp4", "avi", "mov", "mkv"].contains(&extension.as_str()) {
+                        let video_text = Paragraph::new("🎥 VIDEO")
+                            .style(Style::default().fg(Color::Yellow).bg(Color::Black));
+                        let overlay_area = Rect::new(preview_area.x + 2, preview_area.y + 2, 10, 1);
+                        f.render_widget(video_text, overlay_area);
+                    }
+                }
+            } else if self.last_preview.is_some() {
+                // Show loading indicator while preview is being generated
+                let loading_text =
+                    Paragraph::new("Loading preview...").style(Style::default().fg(Color::Gray));
+                f.render_widget(loading_text, preview_area);
             }
 
             // Draw rename dialog if active

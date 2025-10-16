@@ -40,13 +40,25 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
 
     match config.session {
         crate::config::Session::Wayland => {
-            Command::new("swww")
-                .args(expand_args(&config.commands.swww))
-                .status()?;
+            if config.mpvpaper {
+                Command::new("mpvpaper")
+                    .args(expand_args(&config.commands.mpvpaper))
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()?;
+            } else {
+                Command::new("swww")
+                    .args(expand_args(&config.commands.swww))
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()?;
+            }
         }
         crate::config::Session::X11 => {
             Command::new("feh")
                 .args(expand_args(&config.commands.feh))
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
                 .status()?;
         }
     }

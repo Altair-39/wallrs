@@ -12,6 +12,7 @@ use config::Config;
 use crossterm::execute;
 use crossterm::terminal::enable_raw_mode;
 use crossterm::terminal::EnterAlternateScreen;
+use crossterm::terminal::LeaveAlternateScreen;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -65,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Load wallpapers
-    let wallpapers = load_wallpapers(&cfg.wallpaper_dir)?;
+    let wallpapers = load_wallpapers(&cfg.wallpaper_dir, &cfg.mpvpaper)?;
     if wallpapers.is_empty() {
         eprintln!("No wallpapers found in {}", cfg.wallpaper_dir.display());
         return Ok(());
@@ -106,6 +107,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             fs::copy(&selected_wallpaper, &cache_file)?;
             Command::new("pkill").args(["-USR2", "waybar"]).status()?;
+
+            execute!(io::stdout(), LeaveAlternateScreen)?;
+
+            std::process::exit(0);
         } else {
             // Apply wallpaper normally
             apply_wallpaper(&selected_wallpaper, &cfg)?;
