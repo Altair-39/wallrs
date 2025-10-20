@@ -3,7 +3,7 @@ use crate::persistence::save_list;
 use crate::tui::Tab;
 use crossterm::event::{DisableMouseCapture, KeyCode};
 use crossterm::execute;
-use crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode};
+use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
 use ratatui::widgets::ListState;
 use std::io;
 use std::path::PathBuf;
@@ -255,7 +255,7 @@ pub fn handle_input(
         }
 
         // Quit
-        KeyCode::Esc if !*in_search => {
+        KeyCode::Char(c) if *c == keybindings.quit && !filtered.is_empty() && !*in_search => {
             if *mouse_support {
                 execute!(io::stdout(), DisableMouseCapture).ok();
             }
