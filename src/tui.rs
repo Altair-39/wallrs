@@ -56,10 +56,16 @@ impl ImageCache {
         self.cache.insert(path, image);
     }
 }
+#[derive(PartialEq, Eq, Clone)]
+enum Bool {
+    True,
+    False,
+}
+
 #[derive(Clone)]
 struct CachedImage {
     image: Arc<DynamicImage>,
-    is_video: bool,
+    is_video: Bool,
 }
 
 impl CachedImage {
@@ -82,7 +88,11 @@ impl CachedImage {
 
         Ok(Self {
             image: Arc::new(image),
-            is_video: ["mp4", "avi", "mov", "mkv", "webm"].contains(&extension.as_str()),
+            is_video: if ["mp4", "avi", "mov", "mkv", "webm"].contains(&extension.as_str()) {
+                Bool::True
+            } else {
+                Bool::False
+            },
         })
     }
 
@@ -332,7 +342,7 @@ impl<'a> TuiApp<'a> {
                             // Fallback to video placeholder if extraction fails
                             Ok(CachedImage {
                                 image: Arc::new(CachedImage::create_video_placeholder()),
-                                is_video: true,
+                                is_video: Bool::True,
                             })
                         }
                     }

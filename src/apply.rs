@@ -21,6 +21,13 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
             })
             .collect()
     };
+    if config.telegram {
+        // Run telegram-palette-gen
+        Command::new("telegram-palette-gen")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+    }
     if config.pywal {
         // Run wal
         Command::new("wal")
@@ -53,6 +60,11 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
                     .stderr(Stdio::null())
                     .status()?;
             }
+            // Reload waybar
+            Command::new("pkill")
+                .args(["-USR2", "waybar"])
+                .status()
+                .ok();
         }
         crate::config::Session::X11 => {
             Command::new("feh")
@@ -62,12 +74,6 @@ pub fn apply_wallpaper(path: &Path, config: &Config) -> Result<(), Box<dyn std::
                 .status()?;
         }
     }
-
-    // Reload waybar
-    Command::new("pkill")
-        .args(["-USR2", "waybar"])
-        .status()
-        .ok();
 
     Ok(())
 }

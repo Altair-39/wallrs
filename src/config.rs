@@ -23,6 +23,7 @@ pub struct Config {
     pub tabs: Vec<TabConfig>,
     pub list_position: String,
     pub transition_type: String,
+    pub telegram: bool,
     pub pywal: bool,
     pub hellwal: bool,
     pub mpvpaper: bool,
@@ -96,6 +97,7 @@ impl Config {
         let mut transition_type = String::from("fade");
         let mut image_cache_size = Some(50);
 
+        let mut telegram = false;
         let mut pywal = false;
         let mut hellwal = false;
         let mut mpvpaper = false;
@@ -164,7 +166,9 @@ impl Config {
                     transition_type = lower;
                 }
             }
-
+            if let Some(v) = value.get("telegram").and_then(|v| v.as_bool()) {
+                telegram = v;
+            }
             if let Some(v) = value.get("pywal").and_then(|v| v.as_bool()) {
                 pywal = v;
             }
@@ -313,6 +317,7 @@ impl Config {
             tabs,
             list_position,
             transition_type,
+            telegram,
             pywal,
             hellwal,
             commands,
