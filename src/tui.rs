@@ -517,8 +517,6 @@ impl<'a> TuiApp<'a> {
             Tab::Favorites => "Favorites".into(),
         };
 
-        // List items
-
         let items: Vec<ListItem> = filtered
             .iter()
             .enumerate()
@@ -596,7 +594,6 @@ impl<'a> TuiApp<'a> {
         let scroll_ratio = (self.selected as f32 / total.max(1) as f32).min(1.0);
         let scroll_pos = (scroll_ratio * (height - 1) as f32).round() as u16;
 
-        // Store rename_state in a local variable to avoid borrowing issues
         let rename_state = self.rename_state.as_ref();
 
         // Draw UI
@@ -638,11 +635,33 @@ impl<'a> TuiApp<'a> {
                 &mut self.list_state,
             );
 
-            // Preview
-
             if let Some(state) = &mut self.preview_state {
+                // For all layouts, center the preview
+                let centered_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Min(0),                             // Left spacer
+                        Constraint::Length(preview_area.width.min(80)), // Centered content
+                        Constraint::Min(0),                             // Right spacer
+                    ])
+                    .split(preview_area);
+
+                let vertical_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Min(0),                              // Top spacer
+                        Constraint::Length(preview_area.height.min(40)), // Centered content
+                        Constraint::Min(0),                              // Bottom spacer
+                    ])
+                    .split(centered_chunks[1]);
+
+                let centered_area = vertical_chunks[1];
+
+                // CLEAR the entire preview area first to avoid artifacts
+                f.render_widget(Clear, preview_area);
+
                 let widget = StatefulImage::new();
-                f.render_stateful_widget(widget.resize(Resize::Fit(None)), preview_area, state);
+                f.render_stateful_widget(widget.resize(Resize::Fit(None)), centered_area, state);
 
                 // Overlay video indicator if this is a video
                 if let Some(current_path) = self.last_preview.as_ref() {
@@ -654,18 +673,33 @@ impl<'a> TuiApp<'a> {
                     if ["mp4", "avi", "mov", "mkv"].contains(&extension.as_str()) {
                         let video_text = Paragraph::new("🎥 VIDEO")
                             .style(Style::default().fg(Color::Yellow).bg(Color::Black));
-                        let overlay_area = Rect::new(preview_area.x + 2, preview_area.y + 2, 10, 1);
+                        let overlay_area =
+                            Rect::new(centered_area.x + 2, centered_area.y + 2, 10, 1);
                         f.render_widget(video_text, overlay_area);
                     }
                 }
             } else if self.last_preview.is_some() {
-                // Show loading indicator while preview is being generated
-                let loading_text =
-                    Paragraph::new("Loading preview...").style(Style::default().fg(Color::Gray));
-                f.render_widget(loading_text, preview_area);
-            }
+                // Show centered loading indicator
+                let loading_text = Paragraph::new("Loading preview...")
+                    .style(Style::default().fg(Color::Gray))
+                    .alignment(ratatui::layout::Alignment::Center);
 
-            // Draw rename dialog if active
+                let centered_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Min(0),
+                        Constraint::Length(20),
+                        Constraint::Min(0),
+                    ])
+                    .split(preview_area);
+
+                // CLEAR the loading area too
+                f.render_widget(Clear, preview_area);
+                f.render_widget(loading_text, centered_chunks[1]);
+            } else {
+                // CLEAR the preview area when there's no preview at all
+                f.render_widget(Clear, preview_area);
+            } // Draw rename dialog if active
             if let Some(rename_state) = rename_state {
                 Self::draw_rename_dialog(f, area_rect, rename_state);
             }
@@ -673,7 +707,6 @@ impl<'a> TuiApp<'a> {
 
         Ok(())
     }
-
     fn draw_rename_dialog(f: &mut Frame, area: Rect, rename_state: &RenameState) {
         // Create a centered dialog area
         let width = 50;
