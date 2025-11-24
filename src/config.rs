@@ -14,7 +14,7 @@ pub struct CustomKeybindings {
 
 #[derive(Clone)]
 pub struct Config {
-    pub wallpaper_dir: PathBuf,
+    pub wallpaper_dirs: Vec<PathBuf>,
     pub session: Session,
     pub vim_motion: bool,
     pub mouse_support: bool,
@@ -88,7 +88,8 @@ impl Config {
 
         // Default values
         let default_dir = dirs::home_dir().unwrap().join("Pictures/Wallpapers");
-        let mut wallpaper_dir = default_dir;
+        let mut wallpaper_dir = default_dir.clone();
+        let mut wallpaper_dirs = vec![default_dir];
         let mut vim_motion = false;
         let mut mouse_support = false;
         let mut keybindings = CustomKeybindings::default();
@@ -143,7 +144,17 @@ impl Config {
             if let Some(path_str) = value.get("wallpaper_dir").and_then(|v| v.as_str()) {
                 wallpaper_dir = PathBuf::from(path_str);
             }
-
+            if let Some(dirs_value) = value.get("wallpaper_dirs").and_then(|v| v.as_array()) {
+                let mut dirs = Vec::new();
+                for dir_value in dirs_value {
+                    if let Some(dir_str) = dir_value.as_str() {
+                        dirs.push(PathBuf::from(dir_str));
+                    }
+                }
+                wallpaper_dirs = dirs;
+            } else {
+                wallpaper_dirs = vec![wallpaper_dir.clone()]
+            }
             if let Some(v) = value.get("vim_motion").and_then(|v| v.as_bool()) {
                 vim_motion = v;
             }
@@ -308,7 +319,7 @@ impl Config {
         }
 
         Self {
-            wallpaper_dir,
+            wallpaper_dirs,
             session,
             vim_motion,
             mouse_support,

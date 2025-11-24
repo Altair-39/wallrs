@@ -48,12 +48,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cfg = Config::load();
 
     if let Some(pywal_flag) = args.pywal {
-        cfg.pywal = pywal_flag; // only override if user passed --pywal
+        cfg.pywal = pywal_flag;
     }
     if let Some(hellwal_flag) = args.hellwal {
-        cfg.hellwal = hellwal_flag; // only override if user passed --pywal
+        cfg.hellwal = hellwal_flag;
     }
-    // If --path is set, override wallpaper_dir
+
+    // If --path is set, override wallpaper_dirs with a single directory
     if let Some(path) = args.path {
         if !path.is_dir() {
             eprintln!(
@@ -62,13 +63,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             return Ok(());
         }
-        cfg.wallpaper_dir = path;
+        cfg.wallpaper_dirs = vec![path]; // Replace all directories with the CLI path
     }
 
-    // Load wallpapers
-    let wallpapers = load_wallpapers(&cfg.wallpaper_dir, &cfg.mpvpaper)?;
+    // Load wallpapers from all directories
+    let wallpapers = load_wallpapers(&cfg.wallpaper_dirs, &cfg.mpvpaper)?;
     if wallpapers.is_empty() {
-        eprintln!("No wallpapers found in {}", cfg.wallpaper_dir.display());
+        eprintln!("No wallpapers found in the specified directories:");
+        for dir in &cfg.wallpaper_dirs {
+            eprintln!("  {}", dir.display());
+        }
         return Ok(());
     }
 

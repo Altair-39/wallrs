@@ -1,6 +1,6 @@
 [package]
 name = "wallrs"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2024"
 description = "TUI Wallpapers Manager"
 license-file = "LICENSE"
@@ -12,6 +12,7 @@ dirs = "6.0.0"
 image = "0.25.9"
 ratatui = "0.29.0"
 ratatui-image = "8.0.2"
+serde = {version = "1.0.228", features = ["derive"]}
 strum = { version = "0.27", features = ["derive"] }
 strum_macros = "0.27"
 tempfile = "3.23.0"
