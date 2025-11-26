@@ -827,68 +827,65 @@ impl<'a> TuiApp<'a> {
         let event = event::read()?;
 
         if self.rename_state.is_some() {
-            match event {
-                event::Event::Key(key) => {
-                    match key.code {
-                        KeyCode::Enter => {
-                            let (original_path, new_name) = {
-                                let rename_state = self.rename_state.as_mut().unwrap();
-                                let new_name = rename_state.current_input.trim().to_string();
-                                if new_name.is_empty() {
-                                    rename_state.error = Some("Name cannot be empty".to_string());
-                                    return Ok(None);
-                                }
-                                (rename_state.original_path.clone(), new_name)
-                            };
+            if let event::Event::Key(key) = event {
+                match key.code {
+                    KeyCode::Enter => {
+                        let (original_path, new_name) = {
+                            let rename_state = self.rename_state.as_mut().unwrap();
+                            let new_name = rename_state.current_input.trim().to_string();
+                            if new_name.is_empty() {
+                                rename_state.error = Some("Name cannot be empty".to_string());
+                                return Ok(None);
+                            }
+                            (rename_state.original_path.clone(), new_name)
+                        };
 
-                            match self.rename_wallpaper(&original_path, &new_name) {
-                                Ok(new_path) => {
-                                    self.rename_state = None;
+                        match self.rename_wallpaper(&original_path, &new_name) {
+                            Ok(new_path) => {
+                                self.rename_state = None;
 
-                                    if self.last_preview.as_ref() == Some(&original_path) {
+                                if self.last_preview.as_ref() == Some(&original_path) {
+                                    self.last_preview = Some(new_path.clone());
+                                    self.request_preview(new_path);
+                                } else {
+                                    let current_filtered = self.filter_items();
+                                    if let Some(current_selected) =
+                                        current_filtered.get(self.selected)
+                                        && current_selected == &new_path
+                                    {
                                         self.last_preview = Some(new_path.clone());
                                         self.request_preview(new_path);
-                                    } else {
-                                        let current_filtered = self.filter_items();
-                                        if let Some(current_selected) =
-                                            current_filtered.get(self.selected)
-                                            && current_selected == &new_path
-                                        {
-                                            self.last_preview = Some(new_path.clone());
-                                            self.request_preview(new_path);
-                                        }
                                     }
+                                }
 
-                                    return Ok(None);
+                                return Ok(None);
+                            }
+                            Err(e) => {
+                                if let Some(rs) = self.rename_state.as_mut() {
+                                    rs.error = Some(e.to_string());
                                 }
-                                Err(e) => {
-                                    if let Some(rs) = self.rename_state.as_mut() {
-                                        rs.error = Some(e.to_string());
-                                    }
-                                }
                             }
                         }
-                        KeyCode::Esc => {
-                            self.rename_state = None;
-                            return Ok(None);
-                        }
-                        KeyCode::Char(c) => {
-                            if let Some(rs) = self.rename_state.as_mut() {
-                                rs.current_input.push(c);
-                                rs.error = None;
-                            }
-                        }
-                        KeyCode::Backspace => {
-                            if let Some(rs) = self.rename_state.as_mut() {
-                                rs.current_input.pop();
-                                rs.error = None;
-                            }
-                        }
-                        _ => {}
                     }
-                    return Ok(None);
+                    KeyCode::Esc => {
+                        self.rename_state = None;
+                        return Ok(None);
+                    }
+                    KeyCode::Char(c) => {
+                        if let Some(rs) = self.rename_state.as_mut() {
+                            rs.current_input.push(c);
+                            rs.error = None;
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        if let Some(rs) = self.rename_state.as_mut() {
+                            rs.current_input.pop();
+                            rs.error = None;
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
+                return Ok(None);
             }
         } else {
             match event {
