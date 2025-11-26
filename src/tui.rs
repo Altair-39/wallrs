@@ -6,6 +6,8 @@ use crossterm::event::KeyCode;
 use crossterm::event::{self, EnableMouseCapture};
 use crossterm::execute;
 use image::DynamicImage;
+use ratatui::layout::Alignment;
+use ratatui::style::Modifier;
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
@@ -548,6 +550,17 @@ impl<'a> TuiApp<'a> {
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(area_rect);
 
+        // HORIZONTAL TABS LAYOUT - Split the tab area into equal columns
+        let tab_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                active_tabs
+                    .iter()
+                    .map(|_| Constraint::Ratio(1, active_tabs.len() as u32))
+                    .collect::<Vec<_>>(),
+            )
+            .split(chunks[0]);
+
         // Determine list and preview layout based on config
         let (list_area, preview_area) = match self.config.list_position.to_lowercase().as_str() {
             "right" => {
@@ -598,12 +611,28 @@ impl<'a> TuiApp<'a> {
 
         // Draw UI
         self.terminal.draw(|f| {
-            // Tabs
-            let tabs = Tabs::new(tab_titles.clone())
-                .select(selected_index)
-                .block(Block::default().borders(Borders::ALL))
-                .highlight_style(Style::default().fg(Color::Yellow));
-            f.render_widget(tabs, chunks[0]);
+            // HORIZONTAL TABS - Render each tab in its own column
+            for (i, tab_chunk) in tab_chunks.iter().enumerate() {
+                let is_selected = selected_index == i;
+                let tab_content = if is_selected {
+                    format!("▶ {} ◀", tab_titles[i])
+                } else {
+                    tab_titles[i].clone()
+                };
+
+                let tab_block = Paragraph::new(tab_content)
+                    .block(Block::default().borders(Borders::ALL))
+                    .alignment(Alignment::Center)
+                    .style(if is_selected {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    });
+
+                f.render_widget(tab_block, *tab_chunk);
+            }
 
             // Scrollbar
             for y in 0..height {
