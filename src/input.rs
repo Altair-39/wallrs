@@ -1,7 +1,7 @@
 use crate::config::CustomKeybindings;
 use crate::persistence::save_list;
 use crate::tui::Tab;
-use crossterm::event::{DisableMouseCapture, KeyCode};
+use crossterm::event::{DisableMouseCapture, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
 use ratatui::widgets::ListState;
@@ -9,7 +9,6 @@ use std::io;
 use std::path::PathBuf;
 
 pub struct Input<'a> {
-    pub key: KeyCode,
     pub current_tab: &'a mut Tab,
     pub in_search: &'a mut bool,
     pub search_query: &'a mut String,
@@ -28,9 +27,9 @@ pub fn handle_input(
     input: &mut Input,
     multi_select: &mut bool,
     selected_items: &mut Vec<usize>,
+    key_event: KeyEvent,
 ) -> Option<PathBuf> {
     let Input {
-        key,
         current_tab,
         in_search,
         search_query,
@@ -49,9 +48,9 @@ pub fn handle_input(
     let in_search = &mut **in_search;
     let selected = &mut **selected;
 
-    match key {
+    match key_event.code {
         // Toggle multi-select mode, only outside search
-        KeyCode::Char(c) if *c == keybindings.multi_select && !*in_search => {
+        KeyCode::Char(c) if c == keybindings.multi_select && !*in_search => {
             *multi_select = !*multi_select;
             if !*multi_select {
                 selected_items.clear();
@@ -61,16 +60,29 @@ pub fn handle_input(
         }
 
         // Tab switching
-        KeyCode::Tab if !*in_search => {
+        KeyCode::Tab | KeyCode::BackTab if !*in_search => {
             if let Some(pos) = active_tabs.iter().position(|&t| t == *current_tab) {
-                *current_tab = active_tabs[(pos + 1) % active_tabs.len()];
+                let reverse = match key_event.code {
+                    KeyCode::BackTab => true, // BackTab always means reverse
+                    KeyCode::Tab => key_event.modifiers.contains(KeyModifiers::SHIFT), // Tab + Shift means reverse
+                    _ => false,
+                };
+
+                let new_pos = if reverse {
+                    // Move backwards
+                    pos.checked_sub(1).unwrap_or(active_tabs.len() - 1)
+                } else {
+                    // Move forwards
+                    (pos + 1) % active_tabs.len()
+                };
+
+                *current_tab = active_tabs[new_pos];
                 *selected = 0;
                 list_state.select(Some(*selected));
                 selected_items.clear();
                 *multi_select = false;
             }
         }
-
         // Vim-style tab switching
         KeyCode::Char('l') if *vim_motion && !*in_search => {
             if let Some(pos) = active_tabs.iter().position(|&t| t == *current_tab) {
@@ -96,9 +108,10 @@ pub fn handle_input(
                 *multi_select = false;
             }
         }
+
         // Start search
         KeyCode::Char(c)
-            if *c == keybindings.search && *current_tab == Tab::Wallpapers && !*in_search =>
+            if c == keybindings.search && *current_tab == Tab::Wallpapers && !*in_search =>
         {
             *in_search = true;
             search_query.clear();
@@ -112,7 +125,7 @@ pub fn handle_input(
 
         // Search input
         KeyCode::Char(c) if *in_search => {
-            search_query.push(*c);
+            search_query.push(c);
             *selected = 0;
             list_state.select(Some(*selected));
         }
@@ -215,7 +228,7 @@ pub fn handle_input(
         }
 
         // Toggle favorite
-        KeyCode::Char(c) if *c == keybindings.favorite && !filtered.is_empty() => {
+        KeyCode::Char(c) if c == keybindings.favorite && !filtered.is_empty() => {
             if *multi_select && !selected_items.is_empty() {
                 for &i in selected_items.iter() {
                     let item = filtered[i].clone();
@@ -235,8 +248,9 @@ pub fn handle_input(
             }
             save_list("favorites.txt", favorites);
         }
+
         KeyCode::Char(c)
-            if *c == keybindings.rename
+            if c == keybindings.rename
                 && !filtered.is_empty()
                 && !*in_search
                 && *current_tab == Tab::Wallpapers =>
@@ -255,7 +269,7 @@ pub fn handle_input(
         }
 
         // Quit
-        KeyCode::Char(c) if *c == keybindings.quit && !filtered.is_empty() && !*in_search => {
+        KeyCode::Char(c) if c == keybindings.quit && !filtered.is_empty() && !*in_search => {
             if *mouse_support {
                 execute!(io::stdout(), DisableMouseCapture).ok();
             }

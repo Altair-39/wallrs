@@ -14,7 +14,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Style},
     text::Text,
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Tabs},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 use ratatui_image::{Resize, StatefulImage, picker::Picker, protocol::StatefulProtocol};
 use std::collections::HashMap;
@@ -27,6 +27,7 @@ use std::sync::Arc;
 use strum_macros::Display;
 use tempfile::NamedTempFile;
 use tokio::sync::mpsc;
+
 // ---------------------------
 // Image Cache
 // ---------------------------
@@ -893,7 +894,6 @@ impl<'a> TuiApp<'a> {
                     let active_tabs = self.active_tabs();
                     let mut filtered_vec = filtered.to_vec();
                     let mut input = Input {
-                        key: key.code,
                         current_tab: &mut self.current_tab,
                         in_search: &mut self.in_search,
                         search_query: &mut self.search_query,
@@ -908,9 +908,12 @@ impl<'a> TuiApp<'a> {
                         active_tabs: &active_tabs,
                     };
 
-                    if let Some(sel) =
-                        handle_input(&mut input, &mut self.multi_select, &mut self.selected_items)
-                    {
+                    if let Some(sel) = handle_input(
+                        &mut input,
+                        &mut self.multi_select,
+                        &mut self.selected_items,
+                        key,
+                    ) {
                         if sel == PathBuf::from("__rename__") {
                             if !filtered.is_empty() {
                                 self.rename_state = Some(RenameState {
