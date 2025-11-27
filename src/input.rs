@@ -76,21 +76,33 @@ pub fn handle_input(
                     (pos + 1) % active_tabs.len()
                 };
 
-                *current_tab = active_tabs[new_pos];
+                let new_tab = active_tabs[new_pos];
+                *current_tab = new_tab;
                 *selected = 0;
                 list_state.select(Some(*selected));
                 selected_items.clear();
                 *multi_select = false;
+
+                // Auto-open config editor when switching to Config tab
+                if new_tab == Tab::Config {
+                    return Some(PathBuf::from("__config_edit__"));
+                }
             }
         }
         // Vim-style tab switching
         KeyCode::Char('l') if *vim_motion && !*in_search => {
             if let Some(pos) = active_tabs.iter().position(|&t| t == *current_tab) {
-                *current_tab = active_tabs[(pos + 1) % active_tabs.len()];
+                let new_tab = active_tabs[(pos + 1) % active_tabs.len()];
+                *current_tab = new_tab;
                 *selected = 0;
                 list_state.select(Some(*selected));
                 selected_items.clear();
                 *multi_select = false;
+
+                // Auto-open config editor when switching to Config tab
+                if new_tab == Tab::Config {
+                    return Some(PathBuf::from("__config_edit__"));
+                }
             }
         }
 
@@ -101,11 +113,17 @@ pub fn handle_input(
                 } else {
                     pos - 1
                 };
-                *current_tab = active_tabs[new_pos];
+                let new_tab = active_tabs[new_pos];
+                *current_tab = new_tab;
                 *selected = 0;
                 list_state.select(Some(*selected));
                 selected_items.clear();
                 *multi_select = false;
+
+                // Auto-open config editor when switching to Config tab
+                if new_tab == Tab::Config {
+                    return Some(PathBuf::from("__config_edit__"));
+                }
             }
         }
 
@@ -256,6 +274,11 @@ pub fn handle_input(
                 && *current_tab == Tab::Wallpapers =>
         {
             return Some(PathBuf::from("__rename__"));
+        }
+
+        // Manual config editor opening (in case auto-open doesn't work)
+        KeyCode::Enter if *current_tab == Tab::Config && !*in_search => {
+            return Some(PathBuf::from("__config_edit__"));
         }
 
         KeyCode::Enter if !*in_search && !filtered.is_empty() => {

@@ -1,9 +1,10 @@
+use serde::Serialize;
 use std::{env, fs, path::PathBuf};
 use toml::Value;
 
 use crate::tui::Tab;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct CustomKeybindings {
     pub search: char,
     pub favorite: char,
@@ -12,8 +13,9 @@ pub struct CustomKeybindings {
     pub quit: char,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct Config {
+    pub wallpaper_dir: PathBuf,
     pub wallpaper_dirs: Vec<PathBuf>,
     pub session: Session,
     pub vim_motion: bool,
@@ -30,13 +32,13 @@ pub struct Config {
     pub commands: CommandConfig,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum Session {
     X11,
     Wayland,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct CommandConfig {
     pub wal: Vec<String>,
     pub swww: Vec<String>,
@@ -44,7 +46,7 @@ pub struct CommandConfig {
     pub mpvpaper: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct TabConfig {
     pub tab: Tab,
     pub enabled: bool,
@@ -319,6 +321,7 @@ impl Config {
         }
 
         Self {
+            wallpaper_dir,
             wallpaper_dirs,
             session,
             vim_motion,

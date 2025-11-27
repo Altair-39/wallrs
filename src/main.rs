@@ -1,5 +1,6 @@
 mod apply;
 mod config;
+mod configtui;
 mod input;
 mod mouse;
 mod persistence;
@@ -79,12 +80,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
 
     execute!(io::stdout(), EnterAlternateScreen)?;
-    let mut tui = tui::TuiApp::new(&wallpapers, &cfg)?;
+    let mut tui = tui::TuiApp::new(&wallpapers, cfg.clone())?;
     loop {
         // Run TUI to select a wallpaper
         let selected_wallpaper = tui.run().await?;
         if args.print {
-            if cfg.pywal {
+            if cfg.clone().pywal {
                 Command::new("wal")
                     .args([
                         "-i",

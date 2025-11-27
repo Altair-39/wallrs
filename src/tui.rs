@@ -1,13 +1,14 @@
-use crate::config::Config as AppConfig;
+use crate::config::{Config as AppConfig, CustomKeybindings, Session};
 use crate::input::{Input, handle_input};
 use crate::mouse::{MouseInput, handle_mouse};
 use crate::persistence::{load_list, save_list};
-use crossterm::event::KeyCode;
 use crossterm::event::{self, EnableMouseCapture};
+use crossterm::event::{KeyCode, KeyModifiers};
 use crossterm::execute;
 use image::DynamicImage;
 use ratatui::layout::Alignment;
 use ratatui::style::Modifier;
+use ratatui::text::Line;
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
@@ -17,6 +18,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 use ratatui_image::{Resize, StatefulImage, picker::Picker, protocol::StatefulProtocol};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::io;
@@ -27,7 +29,43 @@ use std::sync::Arc;
 use strum_macros::Display;
 use tempfile::NamedTempFile;
 use tokio::sync::mpsc;
+#[derive(Debug, Clone)]
+struct ConfigItem {
+    name: String,
+    value: String,
+    field_type: ConfigFieldType,
+    category: ConfigCategory,
+}
 
+#[derive(Debug, Clone)]
+enum ConfigFieldType {
+    Boolean,
+    Number,
+    ListPosition,
+    Session,
+    TransitionType,
+    Keybinding,
+    CommandList,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ConfigCategory {
+    General,
+    Keybindings,
+    Tabs,
+    Commands,
+}
+
+#[derive(Clone)]
+struct ConfigEditState {
+    items: Vec<ConfigItem>,
+    selected: usize,
+    editing: bool,
+    current_input: String,
+    categories: Vec<ConfigCategory>,
+    selected_category: usize,
+    keybindings: CustomKeybindings, // Add this
+}
 // ---------------------------
 // Image Cache
 // ---------------------------
@@ -152,7 +190,7 @@ impl CachedImage {
 // Tab Enum
 // ---------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, Serialize)]
 pub enum Tab {
     #[strum(serialize = "Wallpapers")]
     Wallpapers,
@@ -160,6 +198,8 @@ pub enum Tab {
     History,
     #[strum(serialize = "Favorites")]
     Favorites,
+    #[strum(serialize = "Config")]
+    Config,
 }
 
 impl Tab {
@@ -172,6 +212,7 @@ impl Tab {
             "wallpapers" | "wallpaper" | "wall" => Some(Tab::Wallpapers),
             "history" | "recent" | "recents" => Some(Tab::History),
             "favorites" | "favourites" | "favorite" | "favourite" | "favs" => Some(Tab::Favorites),
+            "config" | "configs" => Some(Tab::Config),
             _ => None,
         }
     }
@@ -198,12 +239,13 @@ pub struct RenameState {
 // TUI Application
 // ---------------------------
 
-pub struct TuiApp<'a> {
+pub struct TuiApp {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
-    config: &'a AppConfig,
+    config: AppConfig, // Change to mutable reference
     wallpapers: Vec<PathBuf>,
     history: Vec<PathBuf>,
     favorites: Vec<PathBuf>,
+    configs: Vec<PathBuf>,
     selected: usize,
     list_state: ListState,
     search_query: String,
@@ -226,12 +268,12 @@ pub struct TuiApp<'a> {
         Result<CachedImage, Box<dyn std::error::Error + Send + Sync>>,
     )>,
     rename_state: Option<RenameState>,
+    config_edit_state: Option<ConfigEditState>, // Add this
 }
-
-impl<'a> TuiApp<'a> {
+impl<'a> TuiApp {
     pub fn new(
         wallpapers: &[PathBuf],
-        config: &'a AppConfig,
+        config: AppConfig, // This should already be mutable
     ) -> Result<Self, Box<dyn std::error::Error>> {
         if config.mouse_support {
             execute!(io::stdout(), EnableMouseCapture)?;
@@ -262,6 +304,7 @@ impl<'a> TuiApp<'a> {
             wallpapers: wallpapers.to_vec(),
             history: load_list("history.txt"),
             favorites: load_list("favorites.txt"),
+            configs: vec![],
             selected: 0,
             list_state: {
                 let mut s = ListState::default();
@@ -281,9 +324,9 @@ impl<'a> TuiApp<'a> {
             preview_tx,
             preview_rx,
             rename_state: None,
+            config_edit_state: None, // Add this line
         })
     }
-
     pub async fn run(&mut self) -> Result<PathBuf, Box<dyn std::error::Error>> {
         // Preload images
         let filtered = self.filter_items();
@@ -324,6 +367,315 @@ impl<'a> TuiApp<'a> {
 
             tokio::task::yield_now().await;
         }
+    }
+
+    fn create_config_items(&self) -> Vec<ConfigItem> {
+        let mut items = Vec::new();
+
+        // General settings
+        items.push(ConfigItem {
+            name: "Mouse Support".to_string(),
+            value: self.config.mouse_support.to_string(),
+            field_type: ConfigFieldType::Boolean,
+            category: ConfigCategory::General,
+        });
+
+        items.push(ConfigItem {
+            name: "Vim Motion".to_string(),
+            value: self.config.vim_motion.to_string(),
+            field_type: ConfigFieldType::Boolean,
+            category: ConfigCategory::General,
+        });
+
+        items.push(ConfigItem {
+            name: "Session".to_string(),
+            value: format!("{:?}", self.config.session),
+            field_type: ConfigFieldType::Session,
+            category: ConfigCategory::General,
+        });
+
+        items.push(ConfigItem {
+            name: "List Position".to_string(),
+            value: self.config.list_position.clone(),
+            field_type: ConfigFieldType::ListPosition,
+            category: ConfigCategory::General,
+        });
+
+        items.push(ConfigItem {
+            name: "Transition Type".to_string(),
+            value: self.config.transition_type.clone(),
+            field_type: ConfigFieldType::TransitionType,
+            category: ConfigCategory::General,
+        });
+
+        items.push(ConfigItem {
+            name: "Image Cache Size".to_string(),
+            value: self.config.image_cache_size.unwrap_or(50).to_string(),
+            field_type: ConfigFieldType::Number,
+            category: ConfigCategory::General,
+        });
+
+        items.push(ConfigItem {
+            name: "Telegram".to_string(),
+            value: self.config.telegram.to_string(),
+            field_type: ConfigFieldType::Boolean,
+            category: ConfigCategory::General,
+        });
+
+        items.push(ConfigItem {
+            name: "Pywal".to_string(),
+            value: self.config.pywal.to_string(),
+            field_type: ConfigFieldType::Boolean,
+            category: ConfigCategory::General,
+        });
+
+        items.push(ConfigItem {
+            name: "Hellwal".to_string(),
+            value: self.config.hellwal.to_string(),
+            field_type: ConfigFieldType::Boolean,
+            category: ConfigCategory::General,
+        });
+
+        items.push(ConfigItem {
+            name: "Mpvpaper".to_string(),
+            value: self.config.mpvpaper.to_string(),
+            field_type: ConfigFieldType::Boolean,
+            category: ConfigCategory::General,
+        });
+
+        // Keybindings
+        items.push(ConfigItem {
+            name: "Search Key".to_string(),
+            value: self.config.keybindings.search.to_string(),
+            field_type: ConfigFieldType::Keybinding,
+            category: ConfigCategory::Keybindings,
+        });
+
+        items.push(ConfigItem {
+            name: "Favorite Key".to_string(),
+            value: self.config.keybindings.favorite.to_string(),
+            field_type: ConfigFieldType::Keybinding,
+            category: ConfigCategory::Keybindings,
+        });
+
+        items.push(ConfigItem {
+            name: "Multi-select Key".to_string(),
+            value: self.config.keybindings.multi_select.to_string(),
+            field_type: ConfigFieldType::Keybinding,
+            category: ConfigCategory::Keybindings,
+        });
+
+        items.push(ConfigItem {
+            name: "Rename Key".to_string(),
+            value: self.config.keybindings.rename.to_string(),
+            field_type: ConfigFieldType::Keybinding,
+            category: ConfigCategory::Keybindings,
+        });
+
+        items.push(ConfigItem {
+            name: "Quit Key".to_string(),
+            value: self.config.keybindings.quit.to_string(),
+            field_type: ConfigFieldType::Keybinding,
+            category: ConfigCategory::Keybindings,
+        });
+
+        // Tabs
+        for tab_config in &self.config.tabs {
+            items.push(ConfigItem {
+                name: format!("{} Tab", tab_config.tab),
+                value: tab_config.enabled.to_string(),
+                field_type: ConfigFieldType::Boolean,
+                category: ConfigCategory::Tabs,
+            });
+        }
+
+        // Commands
+        items.push(ConfigItem {
+            name: "Wal Command".to_string(),
+            value: self.config.commands.wal.join(" "),
+            field_type: ConfigFieldType::CommandList,
+            category: ConfigCategory::Commands,
+        });
+
+        items.push(ConfigItem {
+            name: "Swww Command".to_string(),
+            value: self.config.commands.swww.join(" "),
+            field_type: ConfigFieldType::CommandList,
+            category: ConfigCategory::Commands,
+        });
+
+        items.push(ConfigItem {
+            name: "Feh Command".to_string(),
+            value: self.config.commands.feh.join(" "),
+            field_type: ConfigFieldType::CommandList,
+            category: ConfigCategory::Commands,
+        });
+
+        items.push(ConfigItem {
+            name: "Mpvpaper Command".to_string(),
+            value: self.config.commands.mpvpaper.join(" "),
+            field_type: ConfigFieldType::CommandList,
+            category: ConfigCategory::Commands,
+        });
+
+        items
+    }
+
+    fn start_config_edit(&mut self) {
+        // Reset selection to safe state
+        self.selected = 0;
+        self.list_state.select(Some(0));
+
+        let items = self.create_config_items();
+        let categories = vec![
+            ConfigCategory::General,
+            ConfigCategory::Keybindings,
+            ConfigCategory::Tabs,
+            ConfigCategory::Commands,
+        ];
+
+        // Start with General category items
+        let general_items: Vec<ConfigItem> = items
+            .into_iter()
+            .filter(|item| item.category == ConfigCategory::General)
+            .collect();
+
+        // Ensure we have items before creating edit state
+        if !general_items.is_empty() {
+            self.config_edit_state = Some(ConfigEditState {
+                items: general_items,
+                selected: 0,
+                editing: false,
+                current_input: String::new(),
+                categories,
+                selected_category: 0, // This should match the category of the items (General)
+                keybindings: self.config.keybindings.clone(),
+            });
+        }
+    }
+    fn apply_config_change(&mut self, item: &ConfigItem, new_value: &str) {
+        match item.name.as_str() {
+            "Mouse Support" => self.config.mouse_support = new_value.parse().unwrap_or(false),
+            "Vim Motion" => self.config.vim_motion = new_value.parse().unwrap_or(false),
+            "Session" => {
+                self.config.session = if new_value.to_lowercase().contains("wayland") {
+                    Session::Wayland
+                } else {
+                    Session::X11
+                };
+            }
+            "List Position" => self.config.list_position = new_value.to_string(),
+            "Transition Type" => self.config.transition_type = new_value.to_string(),
+            "Image Cache Size" => {
+                if let Ok(size) = new_value.parse() {
+                    self.config.image_cache_size = Some(size);
+                }
+            }
+            "Telegram" => self.config.telegram = new_value.parse().unwrap_or(false),
+            "Pywal" => self.config.pywal = new_value.parse().unwrap_or(false),
+            "Hellwal" => self.config.hellwal = new_value.parse().unwrap_or(false),
+            "Mpvpaper" => self.config.mpvpaper = new_value.parse().unwrap_or(false),
+            "Search Key" => {
+                if let Some(c) = new_value.chars().next() {
+                    self.config.keybindings.search = c;
+                }
+            }
+            "Favorite Key" => {
+                if let Some(c) = new_value.chars().next() {
+                    self.config.keybindings.favorite = c;
+                }
+            }
+            "Multi-select Key" => {
+                if let Some(c) = new_value.chars().next() {
+                    self.config.keybindings.multi_select = c;
+                }
+            }
+            "Rename Key" => {
+                if let Some(c) = new_value.chars().next() {
+                    self.config.keybindings.rename = c;
+                }
+            }
+            "Quit Key" => {
+                if let Some(c) = new_value.chars().next() {
+                    self.config.keybindings.quit = c;
+                }
+            }
+            name if name.ends_with(" Tab") => {
+                if let Some(tab_name) = name.strip_suffix(" Tab") && let Ok(tab) = tab_name.parse::<Tab>() && let Some(tab_config) =
+                            self.config.tabs.iter_mut().find(|tc| tc.tab == tab)
+                        {
+                            tab_config.enabled = new_value.parse().unwrap_or(false);
+                        }
+            }
+            "Wal Command" => {
+                self.config.commands.wal = new_value
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect()
+            }
+            "Swww Command" => {
+                self.config.commands.swww = new_value
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect()
+            }
+            "Feh Command" => {
+                self.config.commands.feh = new_value
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect()
+            }
+            "Mpvpaper Command" => {
+                self.config.commands.mpvpaper = new_value
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect()
+            }
+            _ => {}
+        }
+    }
+    fn save_config_to_file(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let config_path = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("wallust")
+            .join("config.toml");
+
+        // Create directory if it doesn't exist
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Create a simplified config for serialization without complex types
+        #[derive(Serialize)]
+        struct SerializableConfig {
+            wallpaper_dirs: Vec<PathBuf>,
+            vim_motion: bool,
+            mouse_support: bool,
+            image_cache_size: Option<usize>,
+            list_position: String,
+            transition_type: String,
+            telegram: bool,
+            pywal: bool,
+            hellwal: bool,
+            mpvpaper: bool,
+        }
+
+        let serializable_config = SerializableConfig {
+            wallpaper_dirs: self.config.wallpaper_dirs.clone(),
+            vim_motion: self.config.vim_motion,
+            mouse_support: self.config.mouse_support,
+            image_cache_size: self.config.image_cache_size,
+            list_position: self.config.list_position.clone(),
+            transition_type: self.config.transition_type.clone(),
+            telegram: self.config.telegram,
+            pywal: self.config.pywal,
+            hellwal: self.config.hellwal,
+            mpvpaper: self.config.mpvpaper,
+        };
+
+        let toml_string = toml::to_string(&serializable_config)?;
+        fs::write(config_path, toml_string)?;
+        Ok(())
     }
     fn request_preview(&self, path: PathBuf) {
         let tx = self.preview_tx.clone();
@@ -413,6 +765,7 @@ impl<'a> TuiApp<'a> {
             }
             Tab::History => self.history.clone(),
             Tab::Favorites => self.favorites.clone(),
+            Tab::Config => self.configs.clone(),
         }
     }
 
@@ -427,7 +780,126 @@ impl<'a> TuiApp<'a> {
             self.dirty = true;
         }
     }
+    fn draw_config_editor(&mut self, edit_state: &ConfigEditState) -> Result<(), Box<dyn std::error::Error>> {
+    self.terminal.draw(|f| {
+        let area = f.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Title
+                Constraint::Length(3), // Categories
+                Constraint::Min(3),    // Config items
+                Constraint::Length(3), // Help
+            ])
+            .split(area);
 
+        // Title with current category
+        let current_category_name = match edit_state.categories[edit_state.selected_category] {
+            ConfigCategory::General => "General",
+            ConfigCategory::Keybindings => "Keybindings", 
+            ConfigCategory::Tabs => "Tabs",
+            ConfigCategory::Commands => "Commands",
+        };
+        
+        let title = Paragraph::new(format!("Configuration Editor - {}", current_category_name))
+            .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL));
+        f.render_widget(title, chunks[0]);
+
+        // Categories - Use Tabs instead of horizontal List
+        let category_names: Vec<&str> = edit_state.categories.iter().map(|cat| match cat {
+            ConfigCategory::General => "General",
+            ConfigCategory::Keybindings => "Keybindings",
+            ConfigCategory::Tabs => "Tabs",
+            ConfigCategory::Commands => "Commands",
+        }).collect();
+
+        // Create tabs for categories
+        let tabs = category_names.iter().enumerate().map(|(i, name)| {
+            let tab_text = if i == edit_state.selected_category {
+                format!("▶ {} ◀", name)
+            } else {
+                format!("  {}  ", name)
+            };
+            Line::from(tab_text)
+                .style(if i == edit_state.selected_category {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                })
+        }).collect::<Vec<_>>();
+
+        let tabs_widget = ratatui::widgets::Tabs::new(tabs)
+            .block(Block::default().borders(Borders::ALL).title("Categories"))
+            .select(edit_state.selected_category)
+            .divider("|");
+        f.render_widget(tabs_widget, chunks[1]);
+
+        // Config items
+        let items: Vec<ListItem> = edit_state.items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                let value_display = match item.field_type {
+                    ConfigFieldType::Boolean => {
+                        if item.value.to_lowercase() == "true" {
+                            "✓".to_string()
+                        } else {
+                            "✗".to_string()
+                        }
+                    }
+                    _ => item.value.clone(),
+                };
+
+                let content = if i == edit_state.selected {
+                    if edit_state.editing {
+                        format!(">> {}: [{}]", item.name, edit_state.current_input)
+                    } else {
+                        format!(">> {}: {}", item.name, value_display)
+                    }
+                } else {
+                    format!("   {}: {}", item.name, value_display)
+                };
+
+                ListItem::new(content)
+                    .style(if i == edit_state.selected {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    })
+            })
+            .collect();
+
+        let list_title = format!("Settings ({})", edit_state.items.len());
+        let list = List::new(items)
+            .block(Block::default().borders(Borders::ALL).title(list_title))
+            .highlight_symbol(">> ");
+        f.render_widget(list, chunks[2]);
+
+        // Help
+        let help_text = if edit_state.editing {
+            "Enter: Confirm | Esc: Cancel"
+        } else {
+            &format!("↑↓/jk: Navigate | Enter/Space: Edit | Tab/Shift+Tab: Switch Categories | {}: Exit | Ctrl+S: Save", 
+                    edit_state.keybindings.quit)
+        };
+        let help = Paragraph::new(help_text)
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL));
+        f.render_widget(help, chunks[3]);
+
+        // Set cursor position if editing
+        if edit_state.editing && let Some(item) = edit_state.items.get(edit_state.selected) {
+                let cursor_x = chunks[2].x + 6 + item.name.len() as u16 + 2 + edit_state.current_input.len() as u16 + 1;
+                let cursor_y = chunks[2].y + 1 + edit_state.selected as u16;
+                f.set_cursor_position(ratatui::prelude::Position::new(cursor_x, cursor_y));
+            
+        }
+    })?;
+
+    Ok(())
+}
     // --------------------
     // File Operations
     // --------------------
@@ -495,6 +967,13 @@ impl<'a> TuiApp<'a> {
     // --------------------
 
     fn draw_ui(&mut self, filtered: &[PathBuf]) -> Result<(), Box<dyn std::error::Error>> {
+        // Handle config edit state first
+        if self.config_edit_state.is_some() {
+            // Clone the edit state to avoid borrowing issues
+            let edit_state = self.config_edit_state.clone().unwrap();
+            self.draw_config_editor(&edit_state)?;
+            return Ok(());
+        }
         let size = self.terminal.size()?;
         let area_rect = Rect {
             x: 0,
@@ -518,6 +997,7 @@ impl<'a> TuiApp<'a> {
             }
             Tab::History => "History".into(),
             Tab::Favorites => "Favorites".into(),
+            Tab::Config => "Configs".into(),
         };
 
         let items: Vec<ListItem> = filtered
@@ -820,102 +1300,333 @@ impl<'a> TuiApp<'a> {
     // --------------------
 
     fn handle_event(
-        &mut self,
-        filtered: &[PathBuf],
-    ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    &mut self,
+    filtered: &[PathBuf],
+) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    self.dirty = true;
+
+    let event = event::read()?;
+
+    // Handle config editing mode first
+    if self.config_edit_state.is_some() {
+        // Take ownership temporarily
+        if let Some(edit_state) = self.config_edit_state.take() {
+            // Process the event and get the updated state
+            let (result, updated_edit_state) = self.handle_config_edit_event(edit_state, &event);
+            // Put the updated state back
+            self.config_edit_state = updated_edit_state;
+            return result;
+        }
+    }
+
+    if self.rename_state.is_some() {
+        // Take ownership temporarily to avoid borrowing conflicts
+        if let Some(mut rename_state) = self.rename_state.take() {
+            let result = self.handle_rename_event(&mut rename_state, &event);
+            // Put it back
+            self.rename_state = Some(rename_state);
+            return result;
+        }
+    }
+
+    // Normal event handling
+    self.handle_normal_event(filtered, &event)
+}
+fn update_config_items_in_state(
+    &mut self,
+    edit_state: &mut ConfigEditState,
+    category: ConfigCategory,
+) {
+    let all_items = self.create_config_items();
+    
+    let filtered_items: Vec<ConfigItem> = all_items
+        .into_iter()
+        .filter(|item| item.category == category)
+        .collect();
+    
+    edit_state.items = filtered_items;
+}
+fn move_to_next_tab(&mut self) {
+    let active_tabs = self.active_tabs();
+    
+    if let Some(current_pos) = active_tabs.iter().position(|&t| t == self.current_tab) {
+        let next_pos = (current_pos + 1) % active_tabs.len();
+        self.current_tab = active_tabs[next_pos];
+        self.selected = 0;
+        self.list_state.select(Some(0));
+        self.selected_items.clear();
+        self.multi_select = false;
         self.dirty = true;
+    }
+}
 
-        let event = event::read()?;
+    fn handle_config_edit_event(
+    &mut self,
+    mut edit_state: ConfigEditState,
+    event: &event::Event,
+) -> (Result<Option<PathBuf>, Box<dyn std::error::Error>>, Option<ConfigEditState>) {
+    match event {
+        event::Event::Key(key) => {
+                // Handle editing mode
+                if edit_state.editing {
+                    match key.code {
+                        KeyCode::Enter => {
+                            // Apply the change
+                            let current_input = edit_state.current_input.clone();
+                            let selected_index = edit_state.selected;
 
-        if self.rename_state.is_some() {
-            if let event::Event::Key(key) = event {
-                match key.code {
-                    KeyCode::Enter => {
-                        let (original_path, new_name) = {
-                            let rename_state = self.rename_state.as_mut().unwrap();
-                            let new_name = rename_state.current_input.trim().to_string();
-                            if new_name.is_empty() {
-                                rename_state.error = Some("Name cannot be empty".to_string());
-                                return Ok(None);
+                            if let Some(item) = edit_state.items.get(selected_index).cloned() {
+                                self.apply_config_change(&item, &current_input);
                             }
-                            (rename_state.original_path.clone(), new_name)
-                        };
 
-                        match self.rename_wallpaper(&original_path, &new_name) {
-                            Ok(new_path) => {
-                                self.rename_state = None;
+                            edit_state.editing = false;
+                            edit_state.current_input.clear();
 
-                                if self.last_preview.as_ref() == Some(&original_path) {
-                                    self.last_preview = Some(new_path.clone());
-                                    self.request_preview(new_path);
-                                } else {
-                                    let current_filtered = self.filter_items();
-                                    if let Some(current_selected) =
-                                        current_filtered.get(self.selected)
-                                        && current_selected == &new_path
-                                    {
-                                        self.last_preview = Some(new_path.clone());
-                                        self.request_preview(new_path);
+                            // Refresh items
+                            let category = edit_state.categories[edit_state.selected_category].clone();
+                            self.update_config_items_in_state(&mut edit_state, category);
+                            self.dirty = true;
+                        }
+                        KeyCode::Esc => {
+                            edit_state.editing = false;
+                            edit_state.current_input.clear();
+                            self.dirty = true;
+                        }
+                        KeyCode::Char(c) => {
+                            edit_state.current_input.push(c);
+                            self.dirty = true;
+                        }
+                        KeyCode::Backspace => {
+                            edit_state.current_input.pop();
+                            self.dirty = true;
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // Not in editing mode - handle navigation and actions
+                    match key.code {
+                        KeyCode::Char(c) => {
+                            // Check for quit key
+                            if c == edit_state.keybindings.quit {
+                                self.dirty = true;
+                                // Move to next tab after quitting config
+                                self.move_to_next_tab();
+                                return (Ok(None), None);
+                            }
+
+                            // Check for vim keys
+                            match c {
+                                'j' | 'J' => {
+                                    // Move down
+                                    if edit_state.selected < edit_state.items.len().saturating_sub(1) {
+                                        edit_state.selected += 1;
+                                    } else {
+                                        edit_state.selected = 0;
+                                    }
+                                    self.dirty = true;
+                                }
+                                'k' | 'K' => {
+                                    // Move up
+                                    if edit_state.selected > 0 {
+                                        edit_state.selected -= 1;
+                                    } else {
+                                        edit_state.selected = edit_state.items.len().saturating_sub(1);
+                                    }
+                                    self.dirty = true;
+                                }
+                                ' ' => {
+                                    // Space bar - edit or toggle
+                                    if let Some(item) = edit_state.items.get(edit_state.selected).cloned() {
+                                        match item.field_type {
+                                            ConfigFieldType::Boolean => {
+                                                let new_value = if item.value.to_lowercase() == "true" {
+                                                    "false"
+                                                } else {
+                                                    "true"
+                                                };
+                                                self.apply_config_change(&item, new_value);
+                                                let category = edit_state.categories[edit_state.selected_category].clone();
+                                                self.update_config_items_in_state(&mut edit_state, category);
+                                                self.dirty = true;
+                                            }
+                                            _ => {
+                                                edit_state.editing = true;
+                                                edit_state.current_input = item.value;
+                                                self.dirty = true;
+                                            }
+                                        }
                                     }
                                 }
-
-                                return Ok(None);
+                                's' | 'S' if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    // Save configuration
+                                    if let Err(e) = self.save_config_to_file() {
+                                        eprintln!("Failed to save config: {}", e);
+                                    }
+                                    self.dirty = true;
+                                    // Move to next tab after saving
+                                    self.move_to_next_tab();
+                                    return (Ok(None), None);
+                                }
+                                _ => {}
                             }
-                            Err(e) => {
-                                if let Some(rs) = self.rename_state.as_mut() {
-                                    rs.error = Some(e.to_string());
+                        }
+                        KeyCode::Down => {
+                            if edit_state.selected < edit_state.items.len().saturating_sub(1) {
+                                edit_state.selected += 1;
+                            } else {
+                                edit_state.selected = 0;
+                            }
+                            self.dirty = true;
+                        }
+                        KeyCode::Up => {
+                            if edit_state.selected > 0 {
+                                edit_state.selected -= 1;
+                            } else {
+                                edit_state.selected = edit_state.items.len().saturating_sub(1);
+                            }
+                            self.dirty = true;
+                        }
+                        KeyCode::Tab => {
+                            if key.modifiers.contains(KeyModifiers::SHIFT) {
+                                // Previous category with wrap
+                                edit_state.selected_category = if edit_state.selected_category == 0 {
+                                    edit_state.categories.len() - 1
+                                } else {
+                                    edit_state.selected_category - 1
+                                };
+                            } else {
+                                // Next category with wrap
+                                edit_state.selected_category = (edit_state.selected_category + 1) % edit_state.categories.len();
+                            }
+                            let category = edit_state.categories[edit_state.selected_category].clone();
+                            self.update_config_items_in_state(&mut edit_state, category);
+                            self.dirty = true;
+                        }
+                        KeyCode::Enter => {
+                            if let Some(item) = edit_state.items.get(edit_state.selected).cloned() {
+                                match item.field_type {
+                                    ConfigFieldType::Boolean => {
+                                        let new_value = if item.value.to_lowercase() == "true" {
+                                            "false"
+                                        } else {
+                                            "true"
+                                        };
+                                        self.apply_config_change(&item, new_value);
+                                        let category = edit_state.categories[edit_state.selected_category].clone();
+                                        self.update_config_items_in_state(&mut edit_state, category);
+                                        self.dirty = true;
+                                    }
+                                    _ => {
+                                        edit_state.editing = true;
+                                        edit_state.current_input = item.value;
+                                        self.dirty = true;
+                                    }
                                 }
                             }
                         }
+                        KeyCode::Esc => {
+                            self.dirty = true;
+                            // Move to next tab after escaping config
+                            self.move_to_next_tab();
+                            return (Ok(None), None);
+                        }
+                        _ => {}
                     }
-                    KeyCode::Esc => {
-                        self.rename_state = None;
+                }
+            }
+        event::Event::FocusGained => todo!(),
+        event::Event::FocusLost => todo!(),
+        event::Event::Mouse(_) => todo!(),
+        event::Event::Paste(_) => todo!(),
+        event::Event::Resize(_, _) => todo!(),
+    }
+
+    (Ok(None), Some(edit_state))
+}    fn handle_rename_event(
+        &mut self,
+        rename_state: &mut RenameState,
+        event: &event::Event,
+    ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+        if let event::Event::Key(key) = event {
+            match key.code {
+                KeyCode::Enter => {
+                    let new_name = rename_state.current_input.trim().to_string();
+                    if new_name.is_empty() {
+                        rename_state.error = Some("Name cannot be empty".to_string());
                         return Ok(None);
                     }
-                    KeyCode::Char(c) => {
-                        if let Some(rs) = self.rename_state.as_mut() {
-                            rs.current_input.push(c);
-                            rs.error = None;
-                        }
-                    }
-                    KeyCode::Backspace => {
-                        if let Some(rs) = self.rename_state.as_mut() {
-                            rs.current_input.pop();
-                            rs.error = None;
-                        }
-                    }
-                    _ => {}
-                }
-                return Ok(None);
-            }
-        } else {
-            match event {
-                event::Event::Key(key) => {
-                    let active_tabs = self.active_tabs();
-                    let mut filtered_vec = filtered.to_vec();
-                    let mut input = Input {
-                        current_tab: &mut self.current_tab,
-                        in_search: &mut self.in_search,
-                        search_query: &mut self.search_query,
-                        selected: &mut self.selected,
-                        list_state: &mut self.list_state,
-                        filtered: &mut filtered_vec,
-                        history: &mut self.history,
-                        favorites: &mut self.favorites,
-                        vim_motion: self.config.vim_motion,
-                        mouse_support: self.config.mouse_support,
-                        keybindings: &self.config.keybindings,
-                        active_tabs: &active_tabs,
-                    };
 
-                    if let Some(sel) = handle_input(
-                        &mut input,
-                        &mut self.multi_select,
-                        &mut self.selected_items,
-                        key,
-                    ) {
-                        if sel == PathBuf::from("__rename__") {
-                            if !filtered.is_empty() {
+                    match self.rename_wallpaper(&rename_state.original_path, &new_name) {
+                        Ok(new_path) => {
+                            self.rename_state = None;
+
+                            // Update preview if needed
+                            if self.last_preview.as_ref() == Some(&rename_state.original_path) {
+                                self.last_preview = Some(new_path.clone());
+                                self.request_preview(new_path);
+                            }
+                        }
+                        Err(e) => {
+                            rename_state.error = Some(e.to_string());
+                        }
+                    }
+                }
+                KeyCode::Esc => {
+                    self.rename_state = None;
+                }
+                KeyCode::Char(c) => {
+                    rename_state.current_input.push(c);
+                    rename_state.error = None;
+                }
+                KeyCode::Backspace => {
+                    rename_state.current_input.pop();
+                    rename_state.error = None;
+                }
+                _ => {}
+            }
+        }
+        Ok(None)
+    }
+
+    // Helper method for normal events
+    fn handle_normal_event(
+        &mut self,
+        filtered: &[PathBuf],
+        event: &event::Event,
+    ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+        match event {
+            event::Event::Key(key) => {
+                let active_tabs = self.active_tabs();
+                let mut filtered_vec = filtered.to_vec();
+
+                let mut input = Input {
+                    current_tab: &mut self.current_tab,
+                    in_search: &mut self.in_search,
+                    search_query: &mut self.search_query,
+                    selected: &mut self.selected,
+                    list_state: &mut self.list_state,
+                    filtered: &mut filtered_vec,
+                    history: &mut self.history,
+                    favorites: &mut self.favorites,
+                    vim_motion: self.config.vim_motion,
+                    mouse_support: self.config.mouse_support,
+                    keybindings: &self.config.keybindings,
+                    active_tabs: &active_tabs,
+                };
+
+                // Store previous tab to detect changes
+                let previous_tab = *input.current_tab;
+
+                if let Some(sel) = handle_input(
+                    &mut input,
+                    &mut self.multi_select,
+                    &mut self.selected_items,
+                    *key,
+                ) {
+                    match sel.to_str() {
+                        Some("__rename__") => {
+                            // Safe rename initialization
+                            if !filtered.is_empty() && self.selected < filtered.len() {
                                 self.rename_state = Some(RenameState {
                                     original_path: filtered[self.selected].clone(),
                                     current_input: String::new(),
@@ -924,24 +1635,40 @@ impl<'a> TuiApp<'a> {
                             }
                             return Ok(None);
                         }
-                        return Ok(Some(sel));
+                        Some("__config_edit__") => {
+                            self.start_config_edit();
+                            return Ok(None);
+                        }
+                        _ => return Ok(Some(sel)),
                     }
                 }
-                event::Event::Mouse(me) if self.config.mouse_support => {
-                    let mut mouse_input = MouseInput {
-                        me,
-                        selected: &mut self.selected,
-                        list_state: &mut self.list_state,
-                        filtered,
-                        list_area: &Rect::new(0, 3, 40, 20),
-                        tabs_area: &Rect::new(0, 0, 80, 3),
-                        current_tab: &mut self.current_tab,
-                    };
-                    handle_mouse(&mut mouse_input);
+
+                // Auto-open config editor when switching to Config tab
+                if *input.current_tab == Tab::Config && previous_tab != Tab::Config {
+                    self.start_config_edit();
                 }
-                _ => {}
             }
+            event::Event::Mouse(me) if self.config.mouse_support => {
+                let previous_tab = self.current_tab;
+                let mut mouse_input = MouseInput {
+                    me: *me,
+                    selected: &mut self.selected,
+                    list_state: &mut self.list_state,
+                    filtered,
+                    list_area: &Rect::new(0, 3, 40, 20),
+                    tabs_area: &Rect::new(0, 0, 80, 3),
+                    current_tab: &mut self.current_tab,
+                };
+                handle_mouse(&mut mouse_input);
+
+                // Auto-open config editor when switching to Config tab via mouse
+                if self.current_tab == Tab::Config && previous_tab != Tab::Config {
+                    self.start_config_edit();
+                }
+            }
+            _ => {}
         }
+
         Ok(None)
     }
 }
