@@ -1,6 +1,5 @@
 mod apply;
 mod config;
-mod configtui;
 mod input;
 mod mouse;
 mod persistence;
