@@ -30,6 +30,7 @@ pub struct Config {
     pub hellwal: bool,
     pub mpvpaper: bool,
     pub commands: CommandConfig,
+    pub wm: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -104,6 +105,8 @@ impl Config {
         let mut pywal = false;
         let mut hellwal = false;
         let mut mpvpaper = false;
+
+        let mut wm = String::from("niri");
         // Default command arguments
         let default_commands = CommandConfig {
             wal: vec![
@@ -194,6 +197,14 @@ impl Config {
 
             if let Some(v) = value.get("image_cache_size").and_then(|v| v.as_integer()) {
                 image_cache_size = Some(v as usize);
+            }
+
+            if let Some(v) = value.get("wm").and_then(|v| v.as_str()) {
+                let valid = ["niri"];
+                let lower = v.to_lowercase();
+                if valid.contains(&lower.as_str()) {
+                    wm = lower;
+                }
             }
 
             // --- Load commands safely (merge with defaults) ---
@@ -336,6 +347,7 @@ impl Config {
             hellwal,
             commands,
             mpvpaper,
+            wm,
         }
     }
 }
